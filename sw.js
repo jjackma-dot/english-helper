@@ -77,5 +77,6 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(caches.match('index.html').then((cached) => cached || fetch(req)));
     return;
   }
-  event.respondWith(caches.match(req, { ignoreSearch: true }).then((cached) => cached || fetch(req)));
+  // ignoreSearch를 쓰면 크롬이 캐시 전체를 훑어 파일마다 수백 ms가 걸린다 (앱 파일 주소에는 ?…가 붙지 않는다)
+  event.respondWith(caches.match(req).then((cached) => cached || fetch(req)));
 });

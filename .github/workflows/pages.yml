@@ -17,8 +17,8 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
       - run: npm test
@@ -28,18 +28,25 @@ jobs:
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # 앱 파일이 마지막으로 바뀐 날짜를 버전에 넣으려고 전체 기록을 받는다
       - name: Collect site files and stamp version
         run: |
+          site="index.html manifest.webmanifest sw.js css js icons samples"
           mkdir -p _site
-          cp -r index.html manifest.webmanifest sw.js css js icons samples _site/
-          ver="$(date -u +%Y%m%d.%H%M)-${GITHUB_SHA::7}"
-          # 버전이 바뀌어야 서비스 워커가 새 파일을 받아 "업데이트" 안내를 띄운다
+          cp -r $site _site/
+          # 버전은 배포할 파일 내용으로 정한다. 버전이 바뀌어야 서비스 워커가 새 파일을 받아 "업데이트" 안내를 띄우므로,
+          # README·테스트만 바뀐 배포에서는 버전도 그대로 두어 설치된 앱이 파일을 다시 받지 않게 한다.
+          hash="$(cd _site && find . -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum | sha256sum | cut -c1-8)"
+          day="$(TZ=UTC git log -1 --format=%cd --date=format-local:%Y%m%d -- $site)"
+          ver="${day}-${hash}"
           sed -i "s/__BUILD__/${ver}/g" _site/sw.js _site/js/version.js
-          grep -q "${ver}" _site/sw.js
+          grep -q "'${ver}'" _site/sw.js
+          grep -q "'${ver}'" _site/js/version.js
           echo "version ${ver}"
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: _site
 
@@ -54,4 +61,4 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
