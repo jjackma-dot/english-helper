@@ -1,0 +1,87 @@
+1
+00:00:02,000 --> 00:00:04,200
+Hi! What can I get for you today?
+
+2
+00:00:04,600 --> 00:00:07,400
+Can I get a large iced latte with oat milk, please?
+
+3
+00:00:07,800 --> 00:00:10,000
+Sure. Would you like anything else?
+
+4
+00:00:10,400 --> 00:00:13,200
+Hmm, maybe a blueberry muffin. Are they fresh?
+
+5
+00:00:13,600 --> 00:00:16,400
+Baked this morning. They're still a little warm.
+
+6
+00:00:16,800 --> 00:00:18,600
+Perfect. I'll take one.
+
+7
+00:00:19,000 --> 00:00:21,600
+That'll be eight fifty. Can I get a name for the order?
+
+8
+00:00:22,000 --> 00:00:23,600
+It's Jamie. J-A-M-I-E.
+
+9
+00:00:24,000 --> 00:00:26,200
+Got it. It'll be ready at the end of the counter.
+
+10
+00:00:30,000 --> 00:00:32,400
+Large iced latte for... Jenny?
+
+11
+00:00:32,800 --> 00:00:35,600
+Oh, I think that's mine. Did you say Jenny or Jamie?
+
+12
+00:00:36,000 --> 00:00:38,800
+Sorry, it's a bit loud in here. It says Jenny on the cup.
+
+13
+00:00:39,200 --> 00:00:42,000
+Hang on, that's my order! Iced latte with oat milk, right?
+
+14
+00:00:42,400 --> 00:00:44,800
+Wait, you ordered the same thing?
+
+15
+00:00:45,200 --> 00:00:47,600
+Looks like it. Great minds think alike.
+
+16
+00:00:48,000 --> 00:00:51,200
+No worries, I'll make another one right away. Two minutes, tops.
+
+17
+00:00:51,600 --> 00:00:54,000
+Thanks. I'm in no rush.
+
+18
+00:00:54,400 --> 00:00:57,200
+So, do you come here often? I've never seen you before.
+
+19
+00:00:57,600 --> 00:01:00,600
+I just moved to the neighborhood last week, actually.
+
+20
+00:01:01,000 --> 00:01:03,800
+Welcome! You picked the best coffee shop on the block.
+
+21
+00:01:04,200 --> 00:01:06,400
+Here you go, Jamie. Sorry for the mix-up!
+
+22
+00:01:06,800 --> 00:01:09,000
+No problem at all. Have a good one!

@@ -1,0 +1,30 @@
+{
+  "id": "./",
+  "name": "English Helper",
+  "short_name": "English Helper",
+  "description": "AI 영어회화 튜터 연결, 한영·영한 사전, 실시간 음성 번역, 넷플릭스·웨이브 자막 학습",
+  "lang": "ko",
+  "dir": "ltr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f5f6fa",
+  "theme_color": "#2f5bea",
+  "categories": ["education", "productivity"],
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "사전", "short_name": "사전", "url": "./#/dict" },
+    { "name": "번역", "short_name": "번역", "url": "./#/translate" },
+    { "name": "OTT 자막 학습", "short_name": "OTT", "url": "./#/ott" },
+    { "name": "AI 영어회화", "short_name": "AI 회화", "url": "./#/tutor" }
+  ],
+  "share_target": {
+    "action": "./",
+    "method": "GET",
+    "params": { "title": "title", "text": "text", "url": "url" }
+  }
+}

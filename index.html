@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https: data: blob:; media-src 'self' https: blob: data:; connect-src 'self' https:; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'"
+    />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
+    <title>English Helper</title>
+    <meta
+      name="description"
+      content="AI 영어회화 튜터 연결, 한영·영한 사전, 실시간 음성 번역, 넷플릭스·웨이브 자막 학습을 한곳에서."
+    />
+    <meta name="theme-color" content="#2f5bea" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#15171c" media="(prefers-color-scheme: dark)" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
+    <link rel="icon" href="icons/icon-192.png" sizes="192x192" type="image/png" />
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+    <link rel="stylesheet" href="css/app.css" />
+    <script type="module" src="js/app.js"></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#views">본문으로 건너뛰기</a>
+    <header class="app-header">
+      <div class="brand">
+        <img src="icons/icon.svg" alt="" width="28" height="28" />
+        <h1 id="view-title">English Helper</h1>
+      </div>
+      <div class="header-actions">
+        <button id="install-btn" class="btn small primary" type="button" hidden>앱 설치</button>
+        <a class="icon-btn" href="#/settings" data-icon="settings" title="설정" aria-label="설정"></a>
+      </div>
+    </header>
+
+    <main id="views">
+      <section id="view-tutor" class="view" hidden></section>
+      <section id="view-dict" class="view" hidden></section>
+      <section id="view-translate" class="view" hidden></section>
+      <section id="view-ott" class="view" hidden></section>
+      <section id="view-words" class="view" hidden></section>
+      <section id="view-settings" class="view" hidden></section>
+      <noscript><p class="error-text">이 앱은 자바스크립트가 필요합니다.</p></noscript>
+    </main>
+
+    <nav class="tabbar" aria-label="주요 기능">
+      <a href="#/tutor" data-tab="tutor" data-icon="chat"><span>AI 회화</span></a>
+      <a href="#/dict" data-tab="dict" data-icon="book"><span>사전</span></a>
+      <a href="#/translate" data-tab="translate" data-icon="globe"><span>번역</span></a>
+      <a href="#/ott" data-tab="ott" data-icon="film"><span>OTT</span></a>
+      <a href="#/words" data-tab="words" data-icon="star"><span>단어장</span></a>
+    </nav>
+  </body>
+</html>

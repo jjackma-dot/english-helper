@@ -1,0 +1,57 @@
+name: Test & Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: false # 배포 도중 취소되지 않게
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm test
+
+  build:
+    needs: test
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Collect site files and stamp version
+        run: |
+          mkdir -p _site
+          cp -r index.html manifest.webmanifest sw.js css js icons samples _site/
+          ver="$(date -u +%Y%m%d.%H%M)-${GITHUB_SHA::7}"
+          # 버전이 바뀌어야 서비스 워커가 새 파일을 받아 "업데이트" 안내를 띄운다
+          sed -i "s/__BUILD__/${ver}/g" _site/sw.js _site/js/version.js
+          grep -q "${ver}" _site/sw.js
+          echo "version ${ver}"
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
