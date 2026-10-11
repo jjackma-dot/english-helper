@@ -47,8 +47,13 @@ function geminiSection() {
       testBtn.disabled = true;
       status.textContent = '확인 중…';
       try {
-        const r = await generate({ prompt: 'Reply with the single word: OK', temperature: 0 });
-        status.textContent = `연결 성공 (${getSettings().geminiModel}): ${String(r).trim().slice(0, 20)}`;
+        let used = getSettings().geminiModel;
+        const r = await generate({
+          prompt: 'Reply with the single word: OK',
+          fallback: false,
+          onMeta: (m) => (used = m.modelVersion),
+        });
+        status.textContent = `연결 성공 (${used}): ${String(r).trim().slice(0, 20)}`;
         status.className = 'hint ok-text';
       } catch (e) {
         status.textContent = errorMessage(e);

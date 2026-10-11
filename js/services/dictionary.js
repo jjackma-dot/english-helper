@@ -71,7 +71,6 @@ export async function aiEntry(query, lang, { signal } = {}) {
       'Be accurate. Use everyday, natural example sentences (2 per entry). Korean must be natural Korean.',
     prompt: task,
     schema: ENTRY_SCHEMA,
-    temperature: 0.2,
     signal,
   });
 }
@@ -91,7 +90,6 @@ export async function aiWordInContext(word, sentence, { signal } = {}) {
       inContext: S.str('Korean explanation of the meaning in this sentence'),
       sentenceKo: S.str('Natural Korean translation of the sentence'),
     }),
-    temperature: 0.2,
     signal,
   });
 }
@@ -118,7 +116,6 @@ export async function aiExplainLine(line, { signal, context = '' } = {}) {
       },
       ['translation', 'expressions']
     ),
-    temperature: 0.2,
     signal,
   });
 }

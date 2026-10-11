@@ -1,8 +1,10 @@
 // 기기 안에만 저장되는 데이터: 설정·단어장·기록(localStorage), 자막 보관함(IndexedDB)
 
 import { DEFAULT_TUTOR_OPTIONS } from './lib/prompts.js';
+import { FAST_MODEL, LEGACY_DEFAULT_MODELS } from './lib/gemini-policy.js';
+import { clearAiCache } from './services/ai-cache.js';
 
-export const DEFAULT_GEMINI_MODEL = 'gemini-flash-latest';
+export const DEFAULT_GEMINI_MODEL = FAST_MODEL;
 
 const DEFAULT_SETTINGS = {
   geminiKey: '',
@@ -52,6 +54,8 @@ let settingsCache = null;
 export function getSettings() {
   if (!settingsCache) {
     const saved = readJson(KEYS.settings, {});
+    // 예전 기본 모델(생각 단계가 길어 느림)이 저장돼 있으면 빠른 기본 모델로 바꾼다
+    if (LEGACY_DEFAULT_MODELS.includes(saved.geminiModel)) saved.geminiModel = DEFAULT_GEMINI_MODEL;
     settingsCache = { ...DEFAULT_SETTINGS, ...saved, tutor: { ...DEFAULT_SETTINGS.tutor, ...(saved.tutor || {}) } };
   }
   return settingsCache;
@@ -189,7 +193,12 @@ export function clearAllData() {
     }
   }
   settingsCache = null;
-  return clearSubtitles();
+  try {
+    localStorage.removeItem('eh.geminiCooldown.v1');
+  } catch {
+    /* 무시 */
+  }
+  return Promise.all([clearSubtitles(), clearAiCache()]);
 }
 
 /* ---------- 자막 보관함 (IndexedDB) ---------- */

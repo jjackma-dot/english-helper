@@ -39,7 +39,6 @@ async function geminiTranslate(text, from, to, { signal } = {}) {
         `Translate the user's text from ${LANG_NAME[from]} into natural, everyday ${LANG_NAME[to]}. ` +
         'Keep the meaning, tone and line breaks. Output only the translation without quotes or explanations.',
       prompt: text,
-      temperature: 0.2,
       signal,
     })
   ).trim();
@@ -103,7 +102,6 @@ export async function transcribeAndTranslate(audio, sourceLang = 'auto', { signa
       language: S.str('Main spoken language code: "ko" or "en"'),
       segments: S.arr(S.obj({ source: S.str('Original sentence'), translation: S.str('Translated sentence') })),
     }),
-    temperature: 0.1,
     signal,
   });
   return { language: result.language || '', segments: Array.isArray(result.segments) ? result.segments : [] };
