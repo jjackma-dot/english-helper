@@ -81,6 +81,7 @@ test('오류 분류: 일일 한도 → 쉬기, 짧은 대기 → 재시도, 503 
   const daily = classifyGeminiError(429, { error: { message: 'limit: 0' } }, { now });
   assert.equal(daily.action, 'cooldown');
   assert.equal(daily.until, Date.parse('2026-10-12T07:00:00Z'));
+  assert.equal(daily.daily, true);
   const short = classifyGeminiError(
     429,
     { error: { details: [{ '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay: '1s' }] } },
@@ -90,6 +91,7 @@ test('오류 분류: 일일 한도 → 쉬기, 짧은 대기 → 재시도, 503 
   const long = classifyGeminiError(429, { error: { message: 'Please retry in 40s.' } }, { now });
   assert.equal(long.action, 'cooldown');
   assert.equal(long.until, now + 40000);
+  assert.ok(!long.daily);
   assert.equal(classifyGeminiError(503, {}).action, 'retry');
   assert.equal(classifyGeminiError(404, {}).action, 'next');
   assert.equal(classifyGeminiError(400, { error: { message: 'thinking_level is not supported' } }).action, 'no-thinking');

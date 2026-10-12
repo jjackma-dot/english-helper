@@ -100,15 +100,15 @@ export function nextPacificMidnight(now = Date.now()) {
 
 /**
  * 오류를 보고 다음 행동을 정한다.
- * @returns {{action: 'retry'|'next'|'cooldown'|'no-thinking'|'fatal', waitMs?: number, until?: number}}
- *  retry: 같은 모델로 waitMs 뒤 한 번 더 / next: 다음 모델 / cooldown: until까지 이 모델을 쉬고 다음 모델
+ * @returns {{action: 'retry'|'next'|'cooldown'|'no-thinking'|'fatal', waitMs?: number, until?: number, daily?: boolean}}
+ *  retry: 같은 모델로 waitMs 뒤 한 번 더 / next: 다음 모델 / cooldown: until까지 이 모델을 쉬고 다음 모델 (daily: 일일 한도)
  *  no-thinking: 생각 설정을 빼고 같은 모델로 다시 / fatal: 다시 시도해도 소용없음(키 오류 등)
  */
 export function classifyGeminiError(status, json, { now = Date.now() } = {}) {
   const msg = `${json?.error?.message || ''} ${JSON.stringify(json?.error?.details || '')}`;
   if (status === 400 && /thinking/i.test(msg)) return { action: 'no-thinking' };
   if (status === 429) {
-    if (isDailyQuota(json)) return { action: 'cooldown', until: nextPacificMidnight(now) };
+    if (isDailyQuota(json)) return { action: 'cooldown', until: nextPacificMidnight(now), daily: true };
     const wait = retryDelayMs(json);
     if (wait != null && wait <= 3000) return { action: 'retry', waitMs: wait + 250 };
     return { action: 'cooldown', until: now + Math.min(Math.max(wait ?? 60000, 5000), 15 * 60000) };

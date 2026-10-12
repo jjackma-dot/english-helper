@@ -89,10 +89,16 @@ test('일일 한도면 그 모델을 쉬게 하고 다음 모델로 넘어가며
   assert.match(calls[2].url, /gemini-3\.1-flash-lite/);
 });
 
-test('모든 모델이 일일 한도면 다시 쓸 수 있는 시각을 알려 준다', async () => {
+test('모든 모델이 일일 한도면 (자정 직전이라도) 일일 한도라고 알려 준다', async () => {
   mockFetch([() => errorRes(429, { code: 429, message: 'limit: 0' })]);
   await assert.rejects(generate({ prompt: 'x', key: 'k' }), /한도를 다 썼습니다/);
   await assert.rejects(generate({ prompt: 'x', key: 'k' }), /한도를 다 썼습니다/);
+});
+
+test('분당 한도로 모든 모델이 쉬면 잠시 뒤 다시 하라고 알려 준다', async () => {
+  mockFetch([() => errorRes(429, { code: 429, message: 'Please retry in 40s.' })]);
+  await assert.rejects(generate({ prompt: 'x', key: 'k' }), /잠시 많습니다/);
+  await assert.rejects(generate({ prompt: 'x', key: 'k' }), /잠시 많습니다/);
 });
 
 test('생각 설정을 거부하면 빼고 다시 보낸다', async () => {
