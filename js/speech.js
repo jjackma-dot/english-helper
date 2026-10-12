@@ -96,7 +96,8 @@ const STT_ERRORS = {
  * 음성 인식기. stop()을 부를 때까지 발화가 끝날 때마다 자동으로 다시 듣는다.
  * (안드로이드 크롬은 continuous 모드에서 결과가 중복되는 문제가 있어 한 문장씩 끊어 듣는다)
  * @param {{lang: string, onInterim?: (t: string) => void, onFinal: (t: string) => void,
- *          onState?: (listening: boolean) => void, onError?: (msg: string) => void, repeat?: boolean}} o
+ *          onState?: (listening: boolean) => void, onError?: (msg: string, code: string) => void, repeat?: boolean}} o
+ *   onError의 code: 'no-speech'(오래 조용해서 멈춤) 또는 인식기 오류 이름
  */
 export function createListener(o) {
   let rec = null;
@@ -133,14 +134,14 @@ export function createListener(o) {
         // 조용한 상태로 계속 다시 듣는 것을 막는다 (약 30초)
         if (++silent >= 4 && active) {
           active = false;
-          o.onError?.('한동안 말소리가 없어 듣기를 멈췄습니다.');
+          o.onError?.('한동안 말소리가 없어 듣기를 멈췄습니다.', 'no-speech');
         }
         return;
       }
       failures++;
       if (STT_ERRORS[e.error] || failures >= 3) {
         active = false;
-        o.onError?.(STT_ERRORS[e.error] || `음성 인식 오류: ${e.error}`);
+        o.onError?.(STT_ERRORS[e.error] || `음성 인식 오류: ${e.error}`, e.error);
       }
     };
     r.onend = () => {

@@ -1,4 +1,5 @@
-// 1) AI 영어회화 튜터: 프롬프트를 만들어 휴대폰의 ChatGPT·Gemini 앱으로 보낸다
+// 1) AI 영어회화 튜터: 앱 안에서 바로 하는 음성 대화(Gemini Live)와,
+//    요청문을 만들어 휴대폰의 ChatGPT·Gemini 앱으로 보내는 기능
 
 import { h, btn, toast, copyText, copyWithToast, shareText, isAndroid, segmented, field, toggle } from '../ui.js';
 import { icon } from '../icons.js';
@@ -11,8 +12,11 @@ import {
   FOLLOW_UPS,
   buildTutorPrompt,
   buildAppLaunchUrl,
+  buildGeminiLiveUrl,
+  buildSpokenOpener,
   getScenario,
 } from '../lib/prompts.js';
+import { createVoiceTutor } from '../components/voice-tutor.js';
 
 let state;
 let promptBox;
@@ -23,12 +27,15 @@ let topicInput;
 let scenarioSelect;
 let openBtnLabel;
 let wordsNote;
+let openerText;
+let voice;
 
 function save() {
   updateSettings({ tutor: { ...state } });
 }
 
 function regenerate(force = false) {
+  openerText.textContent = buildSpokenOpener({ ...state, words: listWords() });
   if (edited && !force) return;
   promptBox.value = buildTutorPrompt({ ...state, words: listWords() });
   edited = false;
@@ -60,6 +67,11 @@ function syncDependentUi() {
   openBtnLabel.textContent = `복사하고 ${AI_APPS[state.app].label} 열기`;
 }
 
+function openApp(url) {
+  if (isAndroid) window.location.href = url;
+  else window.open(url, '_blank', 'noopener');
+}
+
 async function sendViaShare() {
   const text = currentPrompt();
   if (!text) return;
@@ -73,29 +85,38 @@ async function copyAndOpen() {
   const text = currentPrompt();
   if (!text) return;
   const copied = await copyText(text);
+  const label = AI_APPS[state.app].label;
   toast(
     copied
-      ? `프롬프트를 복사했습니다. ${AI_APPS[state.app].label} 입력창을 길게 눌러 붙여넣고 보내세요.`
+      ? `요청문을 복사했습니다. ${label}에 요청문이 들어가지 않았으면 입력창을 길게 눌러 붙여넣으세요.`
       : '복사하지 못했습니다. 미리보기의 글을 길게 눌러 직접 복사하세요.',
     { ms: 5000 }
   );
-  const url = buildAppLaunchUrl(state.app, text, { android: isAndroid });
-  if (isAndroid) window.location.href = url;
-  else window.open(url, '_blank', 'noopener');
+  openApp(buildAppLaunchUrl(state.app, text, { android: isAndroid }));
+}
+
+function openGeminiLive() {
+  if (!topicReady()) return;
+  toast('Gemini Live가 열리면 화면에 보이던 첫 문장을 소리 내어 말하세요.', { ms: 5000 });
+  openApp(buildGeminiLiveUrl({ android: isAndroid }));
+}
+
+/** 필수 입력(토론 주제·상황 설명)이 비었으면 알리고 false */
+function topicReady() {
+  const sc = getScenario(state.scenario);
+  if (sc.topic !== 'required' || String(state.topic || '').trim()) return true;
+  toast(sc.id === 'custom' ? '상황 설명을 입력하세요.' : '토론 주제를 입력하세요.');
+  topicInput.focus();
+  return false;
 }
 
 function currentPrompt() {
-  const sc = getScenario(state.scenario);
-  if (sc.topic === 'required' && !String(state.topic || '').trim()) {
-    toast(sc.id === 'custom' ? '상황 설명을 입력하세요.' : '토론 주제를 입력하세요.');
-    topicInput.focus();
-    return '';
-  }
-  return promptBox.value.trim();
+  return topicReady() ? promptBox.value.trim() : '';
 }
 
 export function init(root) {
   state = { ...getSettings().tutor };
+  voice = createVoiceTutor({ getOptions: () => (topicReady() ? { ...state, words: listWords() } : null) });
 
   scenarioSelect = h('select', {
     onchange: () => onOptionChange({ scenario: scenarioSelect.value }),
@@ -136,6 +157,7 @@ export function init(root) {
 
   openBtnLabel = h('span');
   const openBtn = h('button', { class: 'btn', type: 'button', onclick: copyAndOpen }, icon('external'), openBtnLabel);
+  openerText = h('p', { class: 'callout', lang: 'en' });
 
   root.append(
     h(
@@ -144,23 +166,16 @@ export function init(root) {
       h(
         'p',
         null,
-        '상황과 수준을 고르면 영어 튜터 요청문을 만들어 휴대폰의 ',
-        h('b', null, 'ChatGPT · Gemini'),
-        ' 앱으로 보내 줍니다.'
+        '버튼 하나로 AI 튜터와 바로 ',
+        h('b', null, '영어로 말하며'),
+        ' 연습하세요. 요청문을 휴대폰의 ChatGPT·Gemini 앱으로 보낼 수도 있습니다.'
       )
     ),
+    voice.el,
     h(
       'section',
       { class: 'card' },
-      field(
-        'AI 앱',
-        segmented(
-          Object.entries(AI_APPS).map(([v, a]) => ({ value: v, label: a.label })),
-          state.app,
-          (v) => onOptionChange({ app: v }),
-          { label: 'AI 앱' }
-        )
-      ),
+      h('h3', { class: 'card-title' }, icon('target'), '대화 설정'),
       field('대화 상황', scenarioSelect),
       wordsNote,
       topicField,
@@ -179,19 +194,29 @@ export function init(root) {
         state.koreanHelp,
         (v) => onOptionChange({ koreanHelp: v }),
         '교정·정리는 한국어로, 대화는 영어로'
+      )
+    ),
+    h('h2', { class: 'group-title' }, '다른 앱으로 연습 (ChatGPT·Gemini 앱)'),
+    h(
+      'section',
+      { class: 'card' },
+      h('div', { class: 'row between' }, h('h3', { class: 'card-title' }, icon('file'), '튜터 요청문'), regenBtn),
+      field(
+        'AI 앱',
+        segmented(
+          Object.entries(AI_APPS).map(([v, a]) => ({ value: v, label: a.label })),
+          state.app,
+          (v) => onOptionChange({ app: v }),
+          { label: 'AI 앱' }
+        )
       ),
       toggle(
         '음성 대화용',
         state.voice,
         (v) => onOptionChange({ voice: v }),
-        '짧은 문장·기호 없이 (ChatGPT 음성 모드, Gemini Live)'
-      )
-    ),
-    h(
-      'section',
-      { class: 'card' },
-      h('div', { class: 'row between' }, h('h3', { class: 'card-title' }, icon('file'), '튜터 요청문'), regenBtn),
-      h('p', { class: 'hint' }, '보내기 전에 자유롭게 고쳐도 됩니다.'),
+        '짧은 문장·기호 없이 (ChatGPT 음성 모드용)'
+      ),
+      h('p', { class: 'hint' }, '보내기 전에 자유롭게 고쳐도 됩니다. ChatGPT는 열리면 요청문이 바로 보내집니다.'),
       promptBox,
       h(
         'div',
@@ -201,6 +226,20 @@ export function init(root) {
           : null,
         openBtn,
         btn('복사만 하기', () => copyWithToast(promptBox.value), { cls: 'btn ghost', ico: 'copy' })
+      )
+    ),
+    h(
+      'section',
+      { class: 'card' },
+      h('h3', { class: 'card-title' }, icon('mic'), '앱의 음성 모드로 바로 말하기'),
+      h('p', { class: 'hint' }, 'Gemini Live는 요청문을 받을 수 없습니다. 열리면 먼저 이 문장을 소리 내어 말하세요.'),
+      openerText,
+      h('div', { class: 'stack actions' }, btn('Gemini Live 열기', openGeminiLive, { cls: 'btn', ico: 'external' })),
+      h(
+        'p',
+        { class: 'hint' },
+        h('b', null, 'ChatGPT 음성'),
+        ': 휴대폰 설정에서 기본 디지털 어시스턴트 앱을 ChatGPT로 바꿔 두면(한 번만), 전원(측면) 버튼을 길게 눌러 바로 음성 대화를 열 수 있습니다. 열리면 위 문장으로 시작하세요.'
       )
     ),
     h(
@@ -230,15 +269,17 @@ export function init(root) {
         h(
           'li',
           null,
-          h('b', null, '공유로 보내기'),
-          '를 누르고 목록에서 ChatGPT 또는 Gemini를 고르면 요청문이 새 대화로 들어갑니다. 목록에 없으면 ',
-          h('b', null, '복사하고 열기'),
-          '를 쓰세요.'
+          h('b', null, '음성으로 바로 대화 시작'),
+          '을 누르면 마이크 허용 → 연결 → 튜터의 첫인사까지 자동으로 이어집니다. 튜터가 말을 마치면 그냥 말하면 되고, 틀린 표현은 교정 카드로 보여 줍니다.'
         ),
         h(
           'li',
           null,
-          '음성으로 대화하려면 요청문을 보낸 뒤 같은 대화방에서 음성 버튼을 누르세요 (ChatGPT: 음성 모드, Gemini: Live). 앱 버전에 따라 음성 모드가 앞의 요청문을 이어받지 못하면, 음성으로 "Please be my English tutor"라고 시작하세요.'
+          '다른 앱을 쓰려면 ',
+          h('b', null, '공유로 보내기'),
+          '에서 ChatGPT 또는 Gemini를 고르세요. 목록에 없으면 ',
+          h('b', null, '복사하고 열기'),
+          '를 쓰세요. 음성으로 이어 가려면 같은 대화방에서 음성 버튼을 누르세요.'
         ),
         h('li', null, '대화를 끝낼 때 "end session"이라고 말하면 틀린 표현과 유용한 표현을 정리해 줍니다.')
       )
@@ -259,4 +300,10 @@ export function show(params) {
     scenarioSelect.value = sc;
     onOptionChange({ scenario: sc });
   }
+  voice.show();
+}
+
+/** 다른 탭으로 가면 음성 대화를 잠시 멈춘다 */
+export function hide() {
+  voice.hide();
 }

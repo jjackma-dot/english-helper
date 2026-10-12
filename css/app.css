@@ -1356,3 +1356,117 @@ audio {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ==== 음성 튜터 (AI 회화 탭의 앱 안 음성 대화) ==== */
+
+.voice-card {
+  border: 2px solid color-mix(in srgb, var(--primary) 45%, var(--border));
+}
+.voice-start {
+  width: 100%;
+  min-height: 64px;
+  border-radius: 18px;
+  font-size: 1.1rem;
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--primary) 30%, transparent);
+}
+.voice-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+}
+.voice-status .badge {
+  margin-left: auto;
+}
+.voice-dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+.voice-status[data-state='listening'] .voice-dot {
+  background: var(--ok);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+.voice-status[data-state='speaking'] .voice-dot {
+  background: var(--primary);
+  animation: pulse 0.8s ease-in-out infinite;
+}
+.voice-status:is([data-state='connecting'], [data-state='reconnecting'], [data-state='thinking']) .voice-dot {
+  background: var(--accent);
+  animation: pulse 0.6s ease-in-out infinite;
+}
+.voice-log {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: min(52vh, 460px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 2px;
+}
+.bubble {
+  max-width: 85%;
+  padding: 8px 12px;
+  border-radius: 16px;
+  line-height: 1.45;
+}
+.bubble.tutor {
+  align-self: flex-start;
+  background: var(--surface-2);
+  border-bottom-left-radius: 4px;
+}
+.bubble.me {
+  align-self: flex-end;
+  background: var(--primary);
+  color: var(--primary-ink);
+  border-bottom-right-radius: 4px;
+}
+.bubble.interim {
+  opacity: 0.6;
+  font-style: italic;
+}
+.bubble.cut::after {
+  content: ' …';
+  color: var(--muted);
+}
+.fix-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
+  background: var(--accent-soft);
+}
+.fix-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+.fix-orig {
+  color: var(--muted);
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in srgb, var(--danger) 60%, transparent);
+}
+.fix-new {
+  font-weight: 700;
+}
+.fix-card .chip {
+  align-self: flex-start;
+}
+.voice-controls {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.group-title {
+  margin: 8px 2px 0;
+  font-size: 1rem;
+  font-weight: 800;
+  color: var(--muted);
+}

@@ -111,7 +111,7 @@ function geminiSection() {
     h(
       'p',
       { class: 'hint' },
-      '키를 넣으면 AI 한영사전·예문, 더 자연스러운 번역, 녹음 받아쓰기, OTT 대사 해설을 쓸 수 있습니다. Google AI Studio에서 무료 등급 키를 발급받을 수 있으며, 무료 등급에서는 입력 내용이 Google의 서비스 개선에 쓰일 수 있습니다.'
+      '키를 넣으면 앱 안에서 바로 하는 AI 음성 영어회화, AI 한영사전·예문, 더 자연스러운 번역, 녹음 받아쓰기, OTT 대사 해설을 쓸 수 있습니다. Google AI Studio에서 무료 등급 키를 발급받을 수 있으며, 무료 등급에서는 입력 내용(음성 대화 포함)이 Google의 서비스 개선에 쓰일 수 있습니다.'
     ),
     externalLink('Google AI Studio에서 키 발급', 'https://aistudio.google.com/apikey'),
     field('API 키', keyInput),
