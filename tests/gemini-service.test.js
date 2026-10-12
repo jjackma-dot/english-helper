@@ -138,3 +138,12 @@ test('fallback:false면 지정 모델만 쓴다 (연결 테스트)', async () =>
   await assert.rejects(generate({ prompt: 'x', key: 'k', model: 'gemini-x', fallback: false }));
   assert.equal(calls.length, 1);
 });
+
+test('저작권(RECITATION)·안전 필터로 막히면 다시 시도하지 않고 이유를 알린다', async () => {
+  const calls = mockFetch([() => sse([part('', 'RECITATION')])]);
+  await assert.rejects(generate({ prompt: 'x', key: 'k' }), (e) => e.reason === 'RECITATION' && /저작권/.test(e.message));
+  assert.equal(calls.length, 1);
+  const calls2 = mockFetch([() => sse([{ promptFeedback: { blockReason: 'SAFETY' } }])]);
+  await assert.rejects(generate({ prompt: 'x', key: 'k' }), (e) => e.reason === 'SAFETY');
+  assert.equal(calls2.length, 1);
+});

@@ -87,6 +87,14 @@ function linkedController(signal) {
   return ctl;
 }
 
+/** 다시 시도해도 결과가 같은 오류 (reason: 'RECITATION' | 'SAFETY') */
+function finalError(message, reason) {
+  const e = new Error(message);
+  e.final = true;
+  e.reason = reason;
+  return e;
+}
+
 function abortError() {
   return new DOMException('Aborted', 'AbortError');
 }
@@ -169,7 +177,7 @@ async function streamOnce(model, body, { signal, key, onText, firstChunkMs, idle
       }
       if (json.error) throw new GeminiHttpError(json.error.code || 500, json);
       const c = chunkText(json);
-      if (c.blockReason) throw new Error('Gemini가 이 요청에 답하지 않았습니다(안전 필터).');
+      if (c.blockReason) throw finalError('Gemini가 이 요청에 답하지 않았습니다(안전 필터).', 'SAFETY');
       modelVersion = json.modelVersion || modelVersion;
       if (c.finishReason) finishReason = c.finishReason;
       if (c.text) {
@@ -267,8 +275,12 @@ export async function generate(o) {
           totalMs: o.timeoutMs ?? 45000,
         });
         o.onMeta?.({ model, modelVersion: r.modelVersion || model });
+        if (r.finishReason === 'RECITATION') {
+          // 영화·드라마 대사처럼 저작권이 있는 글을 그대로 옮기는 것을 막았다
+          throw finalError('저작권 보호 때문에 Gemini가 원문을 그대로 보여 주지 못했습니다.', 'RECITATION');
+        }
         if (/SAFETY|PROHIBITED|BLOCKLIST|SPII/.test(r.finishReason) && !r.text) {
-          throw new Error('Gemini가 이 요청에 답하지 않았습니다(안전 필터).');
+          throw finalError('Gemini가 이 요청에 답하지 않았습니다(안전 필터).', 'SAFETY');
         }
         if (!wantJson) return r.text;
         try {
@@ -280,7 +292,7 @@ export async function generate(o) {
           throw e;
         }
       } catch (e) {
-        if (e.name === 'AbortError') throw e;
+        if (e.name === 'AbortError' || e.final) throw e;
         lastError = e;
         // 이미 화면에 일부가 나간 뒤 끊기면 같은 내용을 다시 받느라 한도를 쓰지 않고 오류로 알린다
         if (e.emitted) throw e;
