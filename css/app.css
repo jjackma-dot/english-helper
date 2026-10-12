@@ -1356,3 +1356,55 @@ audio {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ==== OTT 방금 뭐라고 ==== */
+
+ul.listen-about {
+  margin: 0;
+  padding-left: 18px;
+}
+.listen-btn.idle {
+  background: var(--primary);
+  color: var(--primary-ink);
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--primary) 35%, transparent);
+}
+.listen-btn:disabled {
+  opacity: 0.7;
+  cursor: default;
+}
+.listen-warn {
+  background: var(--accent-soft);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+.listen-phrases {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.listen-phrases li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+/* 접어 둔 자막 모드 안의 카드는 그림자 없이 (카드 속 카드) */
+.ott-subs .card,
+.ott-subs .current-line {
+  box-shadow: none;
+}
+
+/* 분할 화면처럼 세로가 짧을 때: 듣는 중에는 안내 문구를 숨기고 최근 결과와 큰 버튼을 우선 */
+@media (max-height: 640px) {
+  .listen-card {
+    padding: 10px 12px;
+    gap: 8px;
+  }
+  .listen-card.on .listen-about {
+    display: none;
+  }
+}

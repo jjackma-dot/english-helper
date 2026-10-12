@@ -2,7 +2,7 @@
   "id": "./",
   "name": "English Helper",
   "short_name": "English Helper",
-  "description": "AI 영어회화 튜터 연결, 한영·영한 사전, 실시간 음성 번역, 넷플릭스·웨이브 자막 학습",
+  "description": "AI 영어회화 튜터 연결, 한영·영한 사전, 실시간 음성 번역, 넷플릭스·웨이브 시청 중 놓친 대사 해석",
   "lang": "ko",
   "dir": "ltr",
   "start_url": "./",
@@ -19,7 +19,7 @@
   "shortcuts": [
     { "name": "사전", "short_name": "사전", "url": "./#/dict" },
     { "name": "번역", "short_name": "번역", "url": "./#/translate" },
-    { "name": "OTT 자막 학습", "short_name": "OTT", "url": "./#/ott" },
+    { "name": "OTT 듣기 도우미", "short_name": "OTT", "url": "./#/ott" },
     { "name": "AI 영어회화", "short_name": "AI 회화", "url": "./#/tutor" }
   ],
   "share_target": {

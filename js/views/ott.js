@@ -1,6 +1,8 @@
-// 4) OTT 영어학습 도우미: 같은 작품의 자막 파일을 재생 시간에 맞춰 따라가다가,
-//    "되감기"를 누르면 최근 N초 동안의 영어 대사를 해석·발음과 함께 보여준다.
-//    (넷플릭스·웨이브 앱은 다른 앱이 화면·재생을 제어할 수 없어서 자막 파일로 동기화한다)
+// 4) OTT 듣기 도우미
+//    - "방금 뭐라고?"(ott-listen.js): 자막 없이 보다가 놓친 대사를 마이크로 듣고 받아쓰기·해석한다 (기본)
+//    - 자막 파일로 따라가기(선택): 같은 작품의 자막 파일을 재생 시간에 맞춰 따라가다가, "되감기"를 누르면
+//      최근 N초 동안의 영어 대사를 해석·발음과 함께 보여준다.
+//    (넷플릭스·웨이브 앱은 다른 앱이 화면·재생·자막을 제어하거나 읽을 수 없다)
 
 import { h, btn, iconBtn, clear, toast, errorMessage, toggle, openSheet, field } from '../ui.js';
 import { icon } from '../icons.js';
@@ -29,8 +31,10 @@ import {
 } from '../lib/subtitles.js';
 import { translate } from '../services/translate.js';
 import { aiExplainLine } from '../services/dictionary.js';
+import { keepAwake } from '../services/wake-lock.js';
 import { speak, stopSpeaking } from '../speech.js';
 import { tappableEnglish } from '../components/word-sheet.js';
+import { buildListenCard, stopListening } from './ott-listen.js';
 
 const REWIND_CHOICES = [5, 10, 15, 20, 30];
 const RATES = [0.5, 0.75, 1, 1.25, 1.5];
@@ -44,7 +48,6 @@ let ui = {};
 let tickTimer = 0;
 let lastSaved = 0;
 let lastCueKey = '';
-let wakeLock = null;
 let visible = false;
 
 /* ================= 보관함(불러오기) 화면 ================= */
@@ -216,11 +219,10 @@ function buildLibrary() {
       h(
         'p',
         null,
-        '넷플릭스·웨이브 앱은 다른 앱이 화면이나 재생을 제어할 수 없습니다. 대신 ',
         h('b', null, '같은 작품의 영어 자막 파일'),
-        '을 불러와 재생 시간에 맞춰 따라가다가, 놓친 대사를 ',
+        '이 있으면 재생 시간에 맞춰 대사를 따라가다가, 놓친 대사를 ',
         h('b', null, '되감기 버튼'),
-        '으로 바로 확인합니다.'
+        '으로 자막 그대로 확인할 수 있습니다.'
       )
     ),
     h(
@@ -445,13 +447,13 @@ function openPlayer(rec) {
   updateSubtitle(rec.id, { openedAt: Date.now() }).catch(() => {});
   startTicking();
   render();
-  window.scrollTo({ top: 0 });
+  playerEl.scrollIntoView({ block: 'start' });
 }
 
 function closePlayer() {
   savePosition(true);
   clock.pause();
-  releaseWakeLock();
+  keepAwake('subtitle', false);
   stopTicking();
   current = null;
   playerEl.hidden = true;
@@ -461,11 +463,8 @@ function closePlayer() {
 
 function togglePlay() {
   clock.toggle();
-  if (clock.running) requestWakeLock();
-  else {
-    releaseWakeLock();
-    savePosition(true);
-  }
+  keepAwake('subtitle', clock.running);
+  if (!clock.running) savePosition(true);
   render();
 }
 
@@ -838,7 +837,7 @@ function highlightList(t, force = false) {
   ui.listBox.querySelector(`li[data-i="${idx}"]`)?.classList.add('on');
 }
 
-/* ---------- 위치 저장 · 화면 꺼짐 방지 ---------- */
+/* ---------- 위치 저장 ---------- */
 
 function savePosition(force = false) {
   if (!current) return;
@@ -847,25 +846,34 @@ function savePosition(force = false) {
   updateSubtitle(current.id, { position: clock.time }).catch(() => {});
 }
 
-async function requestWakeLock() {
-  try {
-    if ('wakeLock' in navigator && !wakeLock) {
-      wakeLock = await navigator.wakeLock.request('screen');
-      wakeLock.addEventListener('release', () => (wakeLock = null));
-    }
-  } catch {
-    wakeLock = null; // 배터리 절약 모드 등에서는 거부될 수 있다
-  }
-}
-
-function releaseWakeLock() {
-  wakeLock?.release().catch(() => {});
-  wakeLock = null;
-}
-
 /* ================= 화면 진입점 ================= */
 
 let library;
+
+/** 자막 없이 볼 때 더 확실하게 알아듣는 방법 (앱 기능이 아닌 안내) */
+function buildTips() {
+  return h(
+    'details',
+    { class: 'card tips' },
+    h('summary', null, icon('info'), ' 더 정확하게 확인하는 방법'),
+    h(
+      'ul',
+      null,
+      h(
+        'li',
+        null,
+        h('b', null, '가장 정확한 방법: '),
+        '넷플릭스·디즈니+에서 ⟲10초를 누르고 영어 자막을 잠깐 켜서 확인한 뒤 다시 끄세요.'
+      ),
+      h(
+        'li',
+        null,
+        h('b', null, '휴대폰으로 보면서 이어폰을 쓸 때: '),
+        '안드로이드 실시간 자막(Live Caption)을 켜세요. 볼륨 버튼 → … → 실시간 자막. 앱에 따라 막힐 수 있습니다.'
+      )
+    )
+  );
+}
 
 export function init(el) {
   root = el;
@@ -873,11 +881,20 @@ export function init(el) {
   libraryEl = library.el;
   playerEl = buildPlayer();
   playerEl.hidden = true;
-  root.append(libraryEl, playerEl);
+  root.append(
+    buildListenCard(),
+    buildTips(),
+    h(
+      'details',
+      { class: 'card ott-subs' },
+      h('summary', null, icon('file'), ' 자막 파일로 따라가기 (선택)'),
+      libraryEl,
+      playerEl
+    )
+  );
   library.renderList();
 
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && clock.running && current) requestWakeLock();
     if (document.visibilityState === 'hidden') savePosition(true);
   });
   document.addEventListener('keydown', (e) => {
@@ -902,6 +919,8 @@ export function show() {
 
 export function hide() {
   // 다른 탭(사전 등)을 보는 동안에도 시계는 계속 흐른다. 화면 갱신만 쉰다.
+  // "방금 뭐라고?" 듣기는 멈추고 보관하던 소리를 지운다.
   visible = false;
   savePosition(true);
+  stopListening();
 }

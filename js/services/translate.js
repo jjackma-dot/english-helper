@@ -106,3 +106,84 @@ export async function transcribeAndTranslate(audio, sourceLang = 'auto', { signa
   });
   return { language: result.language || '', segments: Array.isArray(result.segments) ? result.segments : [] };
 }
+
+/* ---------- OTT "방금 뭐라고?": 방금 들린 대사 받아쓰기·해석 ---------- */
+
+// 스트리밍 중에도 대사 → 표현 → 설명 순서로 오도록 키 순서를 정해 둔다
+const ordered = (schema) => ({ ...schema, propertyOrdering: Object.keys(schema.properties) });
+
+const CLIP_SCHEMA = ordered(
+  S.obj({
+    lines: S.arr(
+      ordered(S.obj({ en: S.str('English line'), ko: S.str('Natural Korean translation') })),
+      'The last 1–3 utterances, oldest first'
+    ),
+    phrases: S.arr(
+      ordered(
+        S.obj({
+          phrase: S.str('English expression from the lines'),
+          meaningKo: S.str('Korean meaning'),
+          noteKo: S.str('Short Korean note (usage, slang, reduction or linking)'),
+        })
+      ),
+      '0–4 items'
+    ),
+    explanationKo: S.str('Short Korean explanation of what is going on and anything a learner might miss'),
+    confidence: { ...S.str('How sure you are about what was said'), enum: ['high', 'medium', 'low'] },
+  })
+);
+
+const CLIP_SYSTEM =
+  'You help a Korean intermediate learner of English who watches English-language TV shows and movies ' +
+  'without subtitles. Write all explanations in natural, friendly Korean.';
+
+const CLIP_SITUATION =
+  'This audio was recorded by a phone microphone next to a TV or phone speaker playing a show or movie. ' +
+  'The learner tapped a button right after the END of this clip because they missed the last line(s). ' +
+  'Focus on the LAST 1–3 utterances, the ones closest to the end (an earlier line only if needed for context). ' +
+  'Ignore music, sound effects and background noise. ';
+
+const CLIP_TASK = {
+  transcript:
+    'Transcribe the English dialogue of those utterances exactly as spoken. If a word is unclear, write ' +
+    '[inaudible] instead — never guess or invent words. Translate each line into natural Korean. In phrases, ' +
+    'briefly explain in Korean any slang, idioms, phrasal verbs and reductions or linking ' +
+    '(gonna, wanna, "did you" → "didja").',
+  gist:
+    'Do NOT quote the dialogue word for word. For each of those utterances, write its gist in simple English ' +
+    'in your own words, with the Korean meaning. In phrases, list key expressions (a few words each) ' +
+    'with Korean meanings and short notes.',
+};
+
+const CLIP_END = ' If there is no clear English speech, return an empty lines array and say so in explanationKo.';
+
+/**
+ * 방금 들린 대사 받아쓰기 + 해석 + 표현 설명 (Gemini 필요).
+ * 저작권 보호(RECITATION)로 원문을 받지 못하면 한 번만, 원문 대신 쉬운 영어 요지를 다시 받는다 (paraphrased: true).
+ * @param {Blob} audio 16kHz WAV
+ * @param {{signal?: AbortSignal, onPartial?: (partial: object) => void}} [o] onPartial: 스트리밍 중 지금까지의 결과
+ * @returns {Promise<{lines: {en: string, ko: string}[], phrases: {phrase: string, meaningKo: string, noteKo: string}[],
+ *          explanationKo: string, confidence: 'high'|'medium'|'low', paraphrased: boolean}>}
+ */
+export async function explainClip(audio, { signal, onPartial } = {}) {
+  const data = await blobToBase64(audio);
+  const ask = async (task) => ({
+    ...(await generate({
+      system: CLIP_SYSTEM,
+      parts: [{ inlineData: { mimeType: 'audio/wav', data } }, { text: CLIP_SITUATION + CLIP_TASK[task] + CLIP_END }],
+      schema: CLIP_SCHEMA,
+      signal,
+      onPartial: onPartial && ((p) => onPartial({ ...p, paraphrased: task === 'gist' })),
+      firstChunkMs: 25000, // 소리를 듣고 답하므로 글보다 첫 글자가 늦다
+      timeoutMs: 60000,
+    })),
+    paraphrased: task === 'gist',
+  });
+  try {
+    return await ask('transcript');
+  } catch (e) {
+    if (e.reason !== 'RECITATION') throw e;
+    onPartial?.({ paraphrased: true }); // 막히기 전에 보여 준 원문 조각을 지운다
+    return ask('gist');
+  }
+}
