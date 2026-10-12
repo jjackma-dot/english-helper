@@ -113,6 +113,11 @@ function checkHealth() {
   ui.warn.hidden = !msg;
 }
 
+/** 키가 없으면: 듣기·느리게 다시 듣기는 되고, 받아쓰기·해석에는 무료 키가 필요하다고 알린다 */
+function renderKeyHint() {
+  ui.keyHint.hidden = geminiEnabled();
+}
+
 function renderState() {
   const on = Boolean(listener);
   ui.card.classList.toggle('on', on);
@@ -133,12 +138,13 @@ function renderState() {
 
 async function ask() {
   const seconds = getSettings().ottListenSeconds;
+  const l = listener;
   capturing = true;
   wasHidden = false;
   renderState();
   await new Promise((r) => setTimeout(r, TAIL_MS));
   capturing = false;
-  const clip = listener?.snapshot(seconds); // 그사이 정지했으면 없음
+  const clip = listener === l ? l.snapshot(seconds) : null; // 그사이 정지했으면 없음
   renderState();
   if (!clip) return;
   if (clip.seconds < 1) return toast('아직 들은 소리가 없습니다. 잠시 뒤에 다시 누르세요.');
@@ -160,23 +166,15 @@ function showClip(clip) {
         'div',
         { class: 'row between' },
         h('h3', { class: 'card-title' }, icon('rewind'), `방금 ${Math.round(clip.seconds)}초`),
-        h('div', { class: 'row' }, replayBtn, iconBtn('x', '닫기', closeResult))
+        iconBtn('x', '닫기', closeResult)
       ),
+      replayBtn,
       body
     )
   );
   ui.result.scrollIntoView({ block: 'start', behavior: 'smooth' });
   if (geminiEnabled()) explain(clip, body);
-  else
-    body.append(
-      h(
-        'p',
-        { class: 'hint' },
-        '받아쓰기·해석은 무료 Gemini 키가 있어야 합니다. ',
-        h('a', { href: '#/settings' }, '설정에서 키 넣기'),
-        ' · 키 없이도 "느리게 다시 듣기"는 쓸 수 있습니다.'
-      )
-    );
+  else body.append(h('p', { class: 'muted' }, '받아쓰기·해석 없이 소리만 받아 두었습니다.'));
 }
 
 async function explain(clip, body) {
@@ -243,7 +241,7 @@ function lineView({ en, ko }) {
     h(
       'div',
       { class: 'row wrap line-actions' },
-      btn('읽기', () => speak(en), { cls: 'chip small', ico: 'volume' }),
+      btn('읽기', () => say(en), { cls: 'chip small', ico: 'volume' }),
       btn(
         '저장',
         () => {
@@ -267,6 +265,7 @@ function phraseItem(p, context) {
       p.meaningKo ? ` — ${p.meaningKo}` : null,
       p.noteKo ? h('div', { class: 'muted small' }, p.noteKo) : null
     ),
+    iconBtn('volume', '읽기', () => say(p.phrase), 'icon-btn small'),
     btn(
       '저장',
       () => {
@@ -285,6 +284,11 @@ function closeResult() {
   clear(ui.result);
 }
 
+/** 영어 읽기(TTS). 듣는 중이면 읽는 소리는 담지 않는다 */
+function say(text) {
+  listener?.pauseWhile(speak(text));
+}
+
 /* ---------- 느리게 다시 듣기 (기기 안에서만 재생, 키·인터넷 불필요) ---------- */
 
 async function toggleReplay(blob, b) {
@@ -300,6 +304,7 @@ async function toggleReplay(blob, b) {
     b.disabled = false;
   }
   replay = r;
+  listener?.pauseWhile(r.ended); // 다시 듣는 소리가 다음 질문에 섞이지 않게
   b.classList.add('on');
   b.lastChild.textContent = '멈추기';
   await r.ended;
@@ -326,7 +331,14 @@ export function buildListenCard() {
     btn('정지', stopListening, { cls: 'btn small', ico: 'stop' })
   );
   ui.warn = h('p', { class: 'listen-warn', role: 'status', hidden: true });
-  ui.result = h('div');
+  ui.result = h('div', { class: 'listen-result' });
+  ui.keyHint = h(
+    'p',
+    { class: 'hint center' },
+    '받아쓰기·해석은 무료 Gemini 키가 있어야 합니다. ',
+    h('a', { href: '#/settings' }, '설정에서 키 넣기'),
+    ' · 키 없이도 듣기와 "느리게 다시 듣기"는 됩니다.'
+  );
   ui.main = h('button', {
     type: 'button',
     class: 'rewind-btn listen-btn',
@@ -371,9 +383,12 @@ export function buildListenCard() {
       )
     ),
     ui.result,
+    ui.keyHint,
     ui.main
   );
   document.addEventListener('visibilitychange', onVisibility);
+  window.addEventListener('settings-changed', renderKeyHint);
+  renderKeyHint();
   renderState();
   return ui.card;
 }

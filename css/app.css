@@ -1411,7 +1411,11 @@ ul.listen-about {
   align-items: flex-start;
   gap: 8px;
 }
-/* 접어 둔 자막 모드 안의 카드는 그림자 없이 (카드 속 카드) */
+.listen-result:empty {
+  display: none;
+}
+/* 듣기 카드 안의 결과, 접어 둔 자막 모드 안의 카드는 그림자 없이 (카드 속 카드) */
+.listen-card .review-card,
 .ott-subs .card,
 .ott-subs .current-line {
   box-shadow: none;

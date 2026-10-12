@@ -109,29 +109,23 @@ export async function transcribeAndTranslate(audio, sourceLang = 'auto', { signa
 
 /* ---------- OTT "방금 뭐라고?": 방금 들린 대사 받아쓰기·해석 ---------- */
 
-// 스트리밍 중에도 대사 → 표현 → 설명 순서로 오도록 키 순서를 정해 둔다
-const ordered = (schema) => ({ ...schema, propertyOrdering: Object.keys(schema.properties) });
-
-const CLIP_SCHEMA = ordered(
-  S.obj({
-    lines: S.arr(
-      ordered(S.obj({ en: S.str('English line'), ko: S.str('Natural Korean translation') })),
-      'The last 1–3 utterances, oldest first'
-    ),
-    phrases: S.arr(
-      ordered(
-        S.obj({
-          phrase: S.str('English expression from the lines'),
-          meaningKo: S.str('Korean meaning'),
-          noteKo: S.str('Short Korean note (usage, slang, reduction or linking)'),
-        })
-      ),
-      '0–4 items'
-    ),
-    explanationKo: S.str('Short Korean explanation of what is going on and anything a learner might miss'),
-    confidence: { ...S.str('How sure you are about what was said'), enum: ['high', 'medium', 'low'] },
-  })
-);
+// S.obj는 키를 적은 순서대로 보내므로, 스트리밍 중에도 대사 → 표현 → 설명 순서로 온다
+const CLIP_SCHEMA = S.obj({
+  lines: S.arr(
+    S.obj({ en: S.str('English line'), ko: S.str('Natural Korean translation') }),
+    'The last 1–3 utterances, oldest first'
+  ),
+  phrases: S.arr(
+    S.obj({
+      phrase: S.str('English expression from the lines'),
+      meaningKo: S.str('Korean meaning'),
+      noteKo: S.str('Short Korean note (usage, slang, reduction or linking)'),
+    }),
+    '0–4 items'
+  ),
+  explanationKo: S.str('Short Korean explanation of what is going on and anything a learner might miss'),
+  confidence: { ...S.str('How sure you are about what was said'), enum: ['high', 'medium', 'low'] },
+});
 
 const CLIP_SYSTEM =
   'You help a Korean intermediate learner of English who watches English-language TV shows and movies ' +

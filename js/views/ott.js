@@ -41,6 +41,7 @@ const RATES = [0.5, 0.75, 1, 1.25, 1.5];
 
 const clock = new PlaybackClock();
 let root;
+let subsEl; // 접어 둔 "자막 파일로 따라가기"
 let libraryEl;
 let playerEl;
 let current = null; // { id, title, cues, hasKo }
@@ -881,24 +882,21 @@ export function init(el) {
   libraryEl = library.el;
   playerEl = buildPlayer();
   playerEl.hidden = true;
-  root.append(
-    buildListenCard(),
-    buildTips(),
-    h(
-      'details',
-      { class: 'card ott-subs' },
-      h('summary', null, icon('file'), ' 자막 파일로 따라가기 (선택)'),
-      libraryEl,
-      playerEl
-    )
+  subsEl = h(
+    'details',
+    { class: 'card ott-subs' },
+    h('summary', null, icon('file'), ' 자막 파일로 따라가기 (선택)'),
+    libraryEl,
+    playerEl
   );
+  root.append(buildListenCard(), buildTips(), subsEl);
   library.renderList();
 
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') savePosition(true);
   });
   document.addEventListener('keydown', (e) => {
-    if (!visible || !current || e.target.closest('input, textarea, select, dialog')) return;
+    if (!visible || !current || !subsEl.open || e.target.closest('input, textarea, select, dialog')) return;
     if (e.code === 'Space') {
       e.preventDefault();
       togglePlay();

@@ -9,8 +9,12 @@ async function acquire() {
   if (lock || requesting || !('wakeLock' in navigator) || document.visibilityState !== 'visible') return;
   requesting = true;
   try {
-    lock = await navigator.wakeLock.request('screen');
-    lock.addEventListener('release', () => (lock = null));
+    const l = await navigator.wakeLock.request('screen');
+    // 예전 잠금의 release 이벤트가 늦게 와도 새 잠금을 잊지 않게, 자기 잠금일 때만 지운다
+    l.addEventListener('release', () => {
+      if (lock === l) lock = null;
+    });
+    lock = l;
     if (!owners.size) release(); // 기다리는 사이에 모두 껐다
   } catch {
     lock = null; // 배터리 절약 모드 등에서는 거부될 수 있다

@@ -7,6 +7,7 @@ import { downsample, encodeWav } from '../lib/wav.js';
 import { SampleRing, normalizePeak, rms } from '../lib/ring.js';
 
 const RATE = 16000; // Gemini에 보내기 좋은 16kHz 모노 (30초 ≈ 0.96MB)
+const MAX_PAUSE_MS = 45000; // 재생이 끝났다는 알림이 오지 않아도 이만큼 지나면 다시 담는다
 
 const SPEAKER_AUDIO = { channelCount: 1, echoCancellation: false, noiseSuppression: false, autoGainControl: false };
 
@@ -15,12 +16,14 @@ const SPEAKER_AUDIO = { channelCount: 1, echoCancellation: false, noiseSuppressi
  *          onMute?: (muted: boolean) => void}} [o]
  *   onLevel: 조각(약 0.1초)마다 소리 크기 / onEnded: 마이크가 끊김(다른 앱·권한 회수 등)
  *   onMute: 시스템이 마이크를 잠시 막음·풂
- * @returns {Promise<{snapshot: (seconds: number) => {blob: Blob, seconds: number},
- *          level: (seconds: number) => number, stop: () => void}>}
+ * @returns {Promise<{snapshot: (seconds: number) => {blob: Blob, seconds: number}, level: (seconds: number) => number,
+ *          pauseWhile: (playing: Promise<unknown>) => void, stop: () => void}>}
  */
 export async function startListening({ keepSeconds = 45, onLevel, onEnded, onMute } = {}) {
   const ring = new SampleRing(RATE * keepSeconds);
+  let paused = 0;
   const mic = await openMic(SPEAKER_AUDIO, (chunk, inRate) => {
+    if (paused) return onLevel?.(0);
     const pcm = downsample(chunk, inRate, RATE); // 받자마자 줄여서 보관 (45초 ≈ 2.9MB)
     ring.push(pcm);
     onLevel?.(rms(pcm));
@@ -38,6 +41,17 @@ export async function startListening({ keepSeconds = 45, onLevel, onEnded, onMut
     },
     /** 최근 seconds초의 소리 크기 (RMS) */
     level: (seconds) => rms(ring.last(seconds * rate)),
+    /** 이 기기가 소리를 내는 동안(느리게 다시 듣기·읽기)은 그 소리가 다음 질문에 섞이지 않게 담지 않는다 */
+    pauseWhile(playing) {
+      paused++;
+      let timer = 0;
+      Promise.race([playing, new Promise((r) => (timer = setTimeout(r, MAX_PAUSE_MS)))])
+        .catch(() => {})
+        .finally(() => {
+          clearTimeout(timer);
+          paused--;
+        });
+    },
     /** 마이크를 끄고 보관하던 소리를 지운다 */
     stop() {
       mic.release();
