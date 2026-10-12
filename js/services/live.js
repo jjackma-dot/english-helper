@@ -3,7 +3,7 @@
 // 연결은 약 10분마다 끊기므로 이어 말하기 정보(handle)로 자동으로 다시 연결한다.
 
 import { apiKey } from './gemini.js';
-import { openMic } from './recorder.js';
+import { getMic } from './recorder.js';
 import { nextPacificMidnight } from '../lib/gemini-policy.js';
 import {
   AUDIO_STREAM_END,
@@ -331,7 +331,7 @@ export function startLive({ system, duplex = false, on }) {
 
   (async () => {
     try {
-      stream = await openMic();
+      stream = await getMic();
       if (stopped) return stream.getTracks().forEach((t) => t.stop());
       await micCtx.audioWorklet.addModule(new URL('../worklets/pcm16-capture.js', import.meta.url));
       if (stopped) return;

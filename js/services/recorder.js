@@ -4,12 +4,16 @@ import { concatFloat32, downsample, encodeWav } from '../lib/wav.js';
 
 export const recordingSupported = Boolean(navigator.mediaDevices?.getUserMedia && window.AudioWorkletNode);
 
-/** 잡음·메아리 제거를 켠 모노 마이크. 권한 거부 등은 알기 쉬운 오류로 바꾼다 */
-export async function openMic() {
+/** 내 목소리용 (통화처럼 잡음·메아리 제거를 켠다) */
+export const VOICE_AUDIO = { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true };
+
+/**
+ * 마이크 스트림을 연다. 권한 거부 등은 알기 쉬운 오류로 바꾼다.
+ * @param {MediaTrackConstraints} audio getUserMedia 오디오 조건 (에코 제거·잡음 제거·자동 음량 등)
+ */
+export async function getMic(audio = VOICE_AUDIO) {
   try {
-    return await navigator.mediaDevices.getUserMedia({
-      audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-    });
+    return await navigator.mediaDevices.getUserMedia({ audio });
   } catch (e) {
     if (e.name === 'NotAllowedError')
       throw new Error('마이크 권한이 거부되었습니다. 브라우저(앱) 권한에서 마이크를 허용하세요.');
@@ -20,11 +24,13 @@ export async function openMic() {
 }
 
 /**
- * @param {{maxSeconds?: number, onLevel?: (level: number, seconds: number) => void, onLimit?: () => void}} [o]
- * @returns {Promise<{stop: () => Promise<{blob: Blob, seconds: number}>, cancel: () => void}>}
+ * 마이크를 열어 PCM 조각(약 4096 샘플씩)을 받는다. 소리는 내지 않는다.
+ * @param {MediaTrackConstraints} audio getUserMedia 오디오 조건
+ * @param {(chunk: Float32Array, sampleRate: number) => void} onChunk
+ * @returns {Promise<{sampleRate: number, track: MediaStreamTrack, release: () => void}>}
  */
-export async function startRecording({ maxSeconds = 300, onLevel, onLimit } = {}) {
-  const stream = await openMic();
+export async function openMic(audio, onChunk) {
+  const stream = await getMic(audio);
   const ctx = new AudioContext();
   try {
     await ctx.audioWorklet.addModule(new URL('../worklets/pcm-recorder.js', import.meta.url));
@@ -39,43 +45,50 @@ export async function startRecording({ maxSeconds = 300, onLevel, onLimit } = {}
   mute.gain.value = 0;
   source.connect(node);
   node.connect(mute).connect(ctx.destination); // 처리 그래프 유지용 (소리는 내지 않음)
+  node.port.onmessage = (e) => onChunk(e.data, ctx.sampleRate);
 
+  return {
+    sampleRate: ctx.sampleRate,
+    track: stream.getAudioTracks()[0],
+    release() {
+      node.port.onmessage = null;
+      try {
+        source.disconnect();
+        node.disconnect();
+      } catch {
+        /* 무시 */
+      }
+      stream.getTracks().forEach((t) => t.stop());
+      ctx.close().catch(() => {});
+    },
+  };
+}
+
+/**
+ * @param {{maxSeconds?: number, onLevel?: (level: number, seconds: number) => void, onLimit?: () => void}} [o]
+ * @returns {Promise<{stop: () => Promise<{blob: Blob, seconds: number}>, cancel: () => void}>}
+ */
+export async function startRecording({ maxSeconds = 300, onLevel, onLimit } = {}) {
   const chunks = [];
   let samples = 0;
-  let stopped = false;
-  node.port.onmessage = (e) => {
-    if (stopped) return;
-    const data = e.data;
+  const mic = await openMic(VOICE_AUDIO, (data, rate) => {
     chunks.push(data);
     samples += data.length;
     let peak = 0;
     for (let i = 0; i < data.length; i += 8) peak = Math.max(peak, Math.abs(data[i]));
-    const seconds = samples / ctx.sampleRate;
+    const seconds = samples / rate;
     onLevel?.(peak, seconds);
     if (seconds >= maxSeconds) onLimit?.();
-  };
-
-  function release() {
-    stopped = true;
-    node.port.onmessage = null;
-    try {
-      source.disconnect();
-      node.disconnect();
-    } catch {
-      /* 무시 */
-    }
-    stream.getTracks().forEach((t) => t.stop());
-    ctx.close().catch(() => {});
-  }
+  });
 
   return {
     async stop() {
-      const rate = ctx.sampleRate;
-      release();
+      const rate = mic.sampleRate;
+      mic.release();
       const pcm = downsample(concatFloat32(chunks), rate, 16000);
       const blob = new Blob([encodeWav(pcm, Math.min(16000, rate))], { type: 'audio/wav' });
       return { blob, seconds: pcm.length / Math.min(16000, rate) };
     },
-    cancel: release,
+    cancel: mic.release,
   };
 }

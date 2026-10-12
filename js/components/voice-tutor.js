@@ -8,6 +8,7 @@ import { buildVoiceTutorSystem } from '../lib/prompts.js';
 import { apiKey } from '../services/gemini.js';
 import { liveBlocked, liveSupported, startLive } from '../services/live.js';
 import { fallbackSupported, startFallback } from '../services/voice-fallback.js';
+import { keepAwake } from '../services/wake-lock.js';
 
 const STATUS = {
   connecting: '연결 중…',
@@ -34,7 +35,6 @@ export function createVoiceTutor({ getOptions }) {
   let turn = {}; // 지금 차례의 말풍선·교정 카드 {me, tutor, fix}
   let interimEl = null;
   let level = -1;
-  let wakeLock = null;
 
   const startLabel = h('span', null, '음성으로 바로 대화 시작');
   const startBtn = h(
@@ -148,7 +148,7 @@ export function createVoiceTutor({ getOptions }) {
       showNotice('이 브라우저에서는 음성 대화를 할 수 없습니다. 안드로이드 크롬을 사용하세요.', true);
       return;
     }
-    keepScreenOn(true);
+    keepAwake('tutor', true); // 대화 중에는 화면이 꺼지지 않게
   }
 
   function begin(kind, options) {
@@ -201,7 +201,7 @@ export function createVoiceTutor({ getOptions }) {
     session = null;
     s?.stop();
     clearTimeout(awayTimer);
-    keepScreenOn(false);
+    keepAwake('tutor', false);
     showInterim('');
     paused = autoPaused = false;
     if (message) showNotice(message, true);
@@ -212,7 +212,7 @@ export function createVoiceTutor({ getOptions }) {
     if (!session) return;
     paused = v;
     session.setPaused(v);
-    keepScreenOn(!v);
+    keepAwake('tutor', !v);
     if (!v) {
       autoPaused = false;
       clearTimeout(awayTimer);
@@ -307,26 +307,6 @@ export function createVoiceTutor({ getOptions }) {
     if (pct === level) return;
     level = pct;
     levelBar.style.width = `${pct}%`;
-  }
-
-  /** 대화 중에는 화면이 꺼지지 않게 한다 */
-  async function keepScreenOn(on) {
-    if (!on) {
-      wakeLock?.release().catch(() => {});
-      wakeLock = null;
-      return;
-    }
-    if (wakeLock || !('wakeLock' in navigator)) return;
-    try {
-      const lock = await navigator.wakeLock.request('screen');
-      if (!session || paused) return lock.release().catch(() => {});
-      wakeLock = lock;
-      lock.addEventListener('release', () => {
-        if (wakeLock === lock) wakeLock = null;
-      });
-    } catch {
-      /* 배터리 절약 모드 등에서는 거부될 수 있다 */
-    }
   }
 
   // 다른 앱으로 가거나 화면이 꺼지면 잠시 멈추고(화면 켜짐 유지도 풀림), 돌아오면 이어 간다

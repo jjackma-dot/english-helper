@@ -15,7 +15,7 @@ const VIEWS = {
   tutor: { title: 'AI 영어회화', mod: tutor },
   dict: { title: '사전', mod: dictionary },
   translate: { title: '번역', mod: translate },
-  ott: { title: 'OTT 자막 학습', mod: ott },
+  ott: { title: 'OTT 듣기 도우미', mod: ott },
   words: { title: '단어장', mod: wordbook },
   settings: { title: '설정', mod: settings },
 };
