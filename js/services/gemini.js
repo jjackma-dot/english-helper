@@ -359,9 +359,14 @@ export async function listModels(key) {
   return names;
 }
 
-/** 스키마 작성용 짧은 표기 */
+/** 스키마 작성용 짧은 표기. 객체 키는 적은 순서대로 나오게 한다 (지정하지 않으면 Gemini가 알파벳순으로 쓴다) */
 export const S = {
   str: (description) => ({ type: 'STRING', ...(description ? { description } : {}) }),
   arr: (items, description) => ({ type: 'ARRAY', items, ...(description ? { description } : {}) }),
-  obj: (properties, required = Object.keys(properties)) => ({ type: 'OBJECT', properties, required }),
+  obj: (properties, required = Object.keys(properties)) => ({
+    type: 'OBJECT',
+    properties,
+    required,
+    propertyOrdering: Object.keys(properties),
+  }),
 };
