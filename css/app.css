@@ -1356,3 +1356,22 @@ audio {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ==== AI 사전: 받는 대로 보여 주기 · 저장된 풀이 ==== */
+
+.ai-senses {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+/* 쓰는 중 · 저장된 풀이와 새로 풀이 · 오류와 다시 시도 (바뀌어도 높이가 흔들리지 않게) */
+.ai-status {
+  min-height: 30px;
+}
+.ai-status .error-text {
+  font-size: 0.9rem;
+}
+.badge.saved {
+  background: var(--accent-soft);
+  color: var(--accent);
+}

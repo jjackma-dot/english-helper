@@ -102,7 +102,14 @@ export async function cached(key, make, { fresh = false } = {}) {
     const hit = await getCached(key);
     if (hit !== undefined) return { value: hit, cached: true };
   }
-  if (inflight.has(key)) return { value: await inflight.get(key), cached: false };
+  if (inflight.has(key)) {
+    try {
+      return { value: await inflight.get(key), cached: false };
+    } catch (e) {
+      // 먼저 시작한 요청이 취소됐으면(같은 단어를 다시 찾은 경우 등) 기다리던 쪽이 직접 만든다
+      if (e?.name !== 'AbortError') throw e;
+    }
+  }
   const p = (async () => {
     const value = await make();
     await setCached(key, value);

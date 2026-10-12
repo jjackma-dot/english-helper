@@ -25,6 +25,7 @@ const ASSETS = [
   'js/components/word-sheet.js',
   'js/lib/api-parse.js',
   'js/lib/clock.js',
+  'js/lib/dict-entry.js',
   'js/lib/gemini-policy.js',
   'js/lib/lang.js',
   'js/lib/partial-json.js',
