@@ -89,10 +89,16 @@ test('일일 한도면 그 모델을 쉬게 하고 다음 모델로 넘어가며
   assert.match(calls[2].url, /gemini-3\.1-flash-lite/);
 });
 
-test('모든 모델이 일일 한도면 다시 쓸 수 있는 시각을 알려 준다', async () => {
+test('모든 모델이 일일 한도면 (자정 직전이라도) 일일 한도라고 알려 준다', async () => {
   mockFetch([() => errorRes(429, { code: 429, message: 'limit: 0' })]);
   await assert.rejects(generate({ prompt: 'x', key: 'k' }), /한도를 다 썼습니다/);
   await assert.rejects(generate({ prompt: 'x', key: 'k' }), /한도를 다 썼습니다/);
+});
+
+test('분당 한도로 모든 모델이 쉬면 잠시 뒤 다시 하라고 알려 준다', async () => {
+  mockFetch([() => errorRes(429, { code: 429, message: 'Please retry in 40s.' })]);
+  await assert.rejects(generate({ prompt: 'x', key: 'k' }), /잠시 많습니다/);
+  await assert.rejects(generate({ prompt: 'x', key: 'k' }), /잠시 많습니다/);
 });
 
 test('생각 설정을 거부하면 빼고 다시 보낸다', async () => {
@@ -137,4 +143,13 @@ test('fallback:false면 지정 모델만 쓴다 (연결 테스트)', async () =>
   const calls = mockFetch([() => errorRes(404, { code: 404, message: 'not found' })]);
   await assert.rejects(generate({ prompt: 'x', key: 'k', model: 'gemini-x', fallback: false }));
   assert.equal(calls.length, 1);
+});
+
+test('저작권(RECITATION)·안전 필터로 막히면 다시 시도하지 않고 이유를 알린다', async () => {
+  const calls = mockFetch([() => sse([part('', 'RECITATION')])]);
+  await assert.rejects(generate({ prompt: 'x', key: 'k' }), (e) => e.reason === 'RECITATION' && /저작권/.test(e.message));
+  assert.equal(calls.length, 1);
+  const calls2 = mockFetch([() => sse([{ promptFeedback: { blockReason: 'SAFETY' } }])]);
+  await assert.rejects(generate({ prompt: 'x', key: 'k' }), (e) => e.reason === 'SAFETY');
+  assert.equal(calls2.length, 1);
 });

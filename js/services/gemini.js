@@ -43,22 +43,28 @@ class GeminiTimeoutError extends Error {
 
 /* ---------- 모델별 쉬는 시간 (한도 초과 시) ---------- */
 
+/** @returns {Record<string, {until: number, daily: boolean}>} 아직 쉬는 중인 모델 */
 function readCooldowns() {
   try {
     const all = JSON.parse(localStorage.getItem(COOLDOWN_KEY) || '{}');
     const now = Date.now();
-    return Object.fromEntries(Object.entries(all).filter(([, until]) => until > now));
+    return Object.fromEntries(Object.entries(all).filter(([, c]) => c?.until > now));
   } catch {
     return {};
   }
 }
 
-function setCooldown(model, until) {
+function setCooldown(model, until, daily) {
   try {
-    localStorage.setItem(COOLDOWN_KEY, JSON.stringify({ ...readCooldowns(), [bareModel(model)]: until }));
+    localStorage.setItem(COOLDOWN_KEY, JSON.stringify({ ...readCooldowns(), [bareModel(model)]: { until, daily } }));
   } catch {
     /* 저장 실패는 무시 */
   }
+}
+
+/** 가장 빨리 다시 쓸 수 있는 쉬는 기록 */
+function soonestCooldown(list) {
+  return list.reduce((a, b) => (!a || b.until < a.until ? b : a), null);
 }
 
 /** 모든 모델이 쉬는 중이면 가장 빨리 다시 쓸 수 있는 시각 */
@@ -66,12 +72,12 @@ export function quotaResumeTime() {
   const c = readCooldowns();
   const models = modelChain(getSettings().geminiModel);
   if (!models.length || !models.every((m) => c[m])) return null;
-  return Math.min(...models.map((m) => c[m]));
+  return soonestCooldown(models.map((m) => c[m])).until;
 }
 
-function resumeText(until) {
+function resumeText({ until, daily }) {
   const t = new Date(until).toLocaleTimeString('ko-KR', { hour: 'numeric', minute: '2-digit' });
-  return until - Date.now() > 3600 * 1000
+  return daily
     ? `오늘 무료 AI 사용 한도를 다 썼습니다. ${t}부터 다시 쓸 수 있고, 그동안은 무료 사전·번역으로 보여 드립니다.`
     : `AI 사용량이 잠시 많습니다. ${t}쯤 다시 시도하세요.`;
 }
@@ -85,6 +91,14 @@ function linkedController(signal) {
     else signal.addEventListener('abort', () => ctl.abort(signal.reason), { once: true });
   }
   return ctl;
+}
+
+/** 다시 시도해도 결과가 같은 오류 (reason: 'RECITATION' | 'SAFETY') */
+function finalError(message, reason) {
+  const e = new Error(message);
+  e.final = true;
+  e.reason = reason;
+  return e;
 }
 
 function abortError() {
@@ -169,7 +183,7 @@ async function streamOnce(model, body, { signal, key, onText, firstChunkMs, idle
       }
       if (json.error) throw new GeminiHttpError(json.error.code || 500, json);
       const c = chunkText(json);
-      if (c.blockReason) throw new Error('Gemini가 이 요청에 답하지 않았습니다(안전 필터).');
+      if (c.blockReason) throw finalError('Gemini가 이 요청에 답하지 않았습니다(안전 필터).', 'SAFETY');
       modelVersion = json.modelVersion || modelVersion;
       if (c.finishReason) finishReason = c.finishReason;
       if (c.text) {
@@ -237,7 +251,7 @@ export async function generate(o) {
   const cooldowns = readCooldowns();
   const chain =
     o.fallback === false ? [bareModel(preferred)] : modelChain(preferred, { cooled: (m) => Boolean(cooldowns[m]) });
-  if (!chain.length) throw new Error(resumeText(Math.min(...Object.values(cooldowns))));
+  if (!chain.length) throw new Error(resumeText(soonestCooldown(Object.values(cooldowns))));
 
   const onText = o.onPartial
     ? (text) => {
@@ -249,7 +263,7 @@ export async function generate(o) {
 
   let attempts = 0;
   let lastError = null;
-  let soonest = Infinity;
+  let soonest = null; // 이번 요청에서 쉬게 된 모델 중 가장 빨리 돌아오는 것
   for (const model of chain) {
     let thinking = thinkingFor(model);
     let retried = false;
@@ -267,8 +281,12 @@ export async function generate(o) {
           totalMs: o.timeoutMs ?? 45000,
         });
         o.onMeta?.({ model, modelVersion: r.modelVersion || model });
+        if (r.finishReason === 'RECITATION') {
+          // 영화·드라마 대사처럼 저작권이 있는 글을 그대로 옮기는 것을 막았다
+          throw finalError('저작권 보호 때문에 Gemini가 원문을 그대로 보여 주지 못했습니다.', 'RECITATION');
+        }
         if (/SAFETY|PROHIBITED|BLOCKLIST|SPII/.test(r.finishReason) && !r.text) {
-          throw new Error('Gemini가 이 요청에 답하지 않았습니다(안전 필터).');
+          throw finalError('Gemini가 이 요청에 답하지 않았습니다(안전 필터).', 'SAFETY');
         }
         if (!wantJson) return r.text;
         try {
@@ -280,7 +298,7 @@ export async function generate(o) {
           throw e;
         }
       } catch (e) {
-        if (e.name === 'AbortError') throw e;
+        if (e.name === 'AbortError' || e.final) throw e;
         lastError = e;
         // 이미 화면에 일부가 나간 뒤 끊기면 같은 내용을 다시 받느라 한도를 쓰지 않고 오류로 알린다
         if (e.emitted) throw e;
@@ -297,8 +315,8 @@ export async function generate(o) {
             continue;
           }
           if (c.action === 'cooldown') {
-            setCooldown(model, c.until);
-            soonest = Math.min(soonest, c.until);
+            setCooldown(model, c.until, Boolean(c.daily));
+            soonest = soonestCooldown([soonest, { until: c.until, daily: Boolean(c.daily) }].filter(Boolean));
           }
           break; // 다음 모델
         }
@@ -313,7 +331,7 @@ export async function generate(o) {
     }
     if (attempts >= MAX_ATTEMPTS) break;
   }
-  if (lastError instanceof GeminiHttpError && lastError.status === 429 && Number.isFinite(soonest)) {
+  if (lastError instanceof GeminiHttpError && lastError.status === 429 && soonest) {
     throw new Error(resumeText(soonest));
   }
   if (lastError instanceof TypeError) {
@@ -341,9 +359,14 @@ export async function listModels(key) {
   return names;
 }
 
-/** 스키마 작성용 짧은 표기 */
+/** 스키마 작성용 짧은 표기. 객체 키는 적은 순서대로 나오게 한다 (지정하지 않으면 Gemini가 알파벳순으로 쓴다) */
 export const S = {
   str: (description) => ({ type: 'STRING', ...(description ? { description } : {}) }),
   arr: (items, description) => ({ type: 'ARRAY', items, ...(description ? { description } : {}) }),
-  obj: (properties, required = Object.keys(properties)) => ({ type: 'OBJECT', properties, required }),
+  obj: (properties, required = Object.keys(properties)) => ({
+    type: 'OBJECT',
+    properties,
+    required,
+    propertyOrdering: Object.keys(properties),
+  }),
 };
