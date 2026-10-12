@@ -4,22 +4,27 @@ import { concatFloat32, downsample, encodeWav } from '../lib/wav.js';
 
 export const recordingSupported = Boolean(navigator.mediaDevices?.getUserMedia && window.AudioWorkletNode);
 
-/**
- * @param {{maxSeconds?: number, onLevel?: (level: number, seconds: number) => void, onLimit?: () => void}} [o]
- * @returns {Promise<{stop: () => Promise<{blob: Blob, seconds: number}>, cancel: () => void}>}
- */
-export async function startRecording({ maxSeconds = 300, onLevel, onLimit } = {}) {
-  let stream;
+/** 잡음·메아리 제거를 켠 모노 마이크. 권한 거부 등은 알기 쉬운 오류로 바꾼다 */
+export async function openMic() {
   try {
-    stream = await navigator.mediaDevices.getUserMedia({
+    return await navigator.mediaDevices.getUserMedia({
       audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
     });
   } catch (e) {
     if (e.name === 'NotAllowedError')
       throw new Error('마이크 권한이 거부되었습니다. 브라우저(앱) 권한에서 마이크를 허용하세요.');
     if (e.name === 'NotFoundError') throw new Error('마이크를 찾을 수 없습니다.');
+    if (e.name === 'NotReadableError') throw new Error('다른 앱이 마이크를 쓰고 있어 열 수 없습니다.');
     throw e;
   }
+}
+
+/**
+ * @param {{maxSeconds?: number, onLevel?: (level: number, seconds: number) => void, onLimit?: () => void}} [o]
+ * @returns {Promise<{stop: () => Promise<{blob: Blob, seconds: number}>, cancel: () => void}>}
+ */
+export async function startRecording({ maxSeconds = 300, onLevel, onLimit } = {}) {
+  const stream = await openMic();
   const ctx = new AudioContext();
   try {
     await ctx.audioWorklet.addModule(new URL('../worklets/pcm-recorder.js', import.meta.url));
