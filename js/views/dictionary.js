@@ -4,6 +4,7 @@ import { h, btn, iconBtn, clear, section, toast, errorMessage, externalLink } fr
 import { icon } from '../icons.js';
 import { geminiEnabled, addWord, hasWord, getDictHistory, pushDictHistory, clearDictHistory } from '../store.js';
 import { detectLang, normalizeTerm, lemmaCandidates } from '../lib/lang.js';
+import { entryView, imageQuery } from '../lib/dict-entry.js';
 import { freeDictionary, wiktionary, searchImages, aiEntry, externalLinks } from '../services/dictionary.js';
 import { wordMeanings, translate } from '../services/translate.js';
 import { speak, playAudio, listenOnce, sttSupported } from '../speech.js';
@@ -119,29 +120,30 @@ function saveBtn(getItem) {
   return b;
 }
 
-/** 영어 예문 + 발음 + (번역 없으면) 해석 버튼 */
-function exampleItem(en, ko) {
+/** 영어 예문 + 발음 + (번역 없으면) 해석 버튼. translatable: false면 해석 버튼을 달지 않는다 (번역이 곧 도착할 때) */
+function exampleItem(en, ko, { translatable = true } = {}) {
   const koLine = h('div', { class: 'muted' }, ko || '');
-  const transBtn = ko
-    ? null
-    : h(
-        'button',
-        {
-          type: 'button',
-          class: 'chip small',
-          onclick: async () => {
-            transBtn.disabled = true;
-            try {
-              koLine.textContent = (await translate(en, 'en', 'ko')).text;
-              transBtn.remove();
-            } catch (e) {
-              toast(errorMessage(e));
-              transBtn.disabled = false;
-            }
+  const transBtn =
+    ko || !translatable
+      ? null
+      : h(
+          'button',
+          {
+            type: 'button',
+            class: 'chip small',
+            onclick: async () => {
+              transBtn.disabled = true;
+              try {
+                koLine.textContent = (await translate(en, 'en', 'ko')).text;
+                transBtn.remove();
+              } catch (e) {
+                toast(errorMessage(e));
+                transBtn.disabled = false;
+              }
+            },
           },
-        },
-        '해석'
-      );
+          '해석'
+        );
   return h(
     'li',
     { class: 'example' },
@@ -166,8 +168,12 @@ async function search(raw) {
   const useAi = geminiEnabled();
   clear(results);
 
+  // 지금까지 찾은 뜻과 영어 단어 (단어장 저장·이미지 검색어에 쓴다)
+  let aiMeaning = '';
+  let freeMeaning = '';
+  const found = { aiWords: [], candidates: [] };
+
   // 표제어 머리
-  let meaningForSave = '';
   const phon = h('span', { class: 'ipa' });
   const audioRow = h('span', { class: 'row' });
   const head = h(
@@ -181,7 +187,9 @@ async function search(raw) {
       lang === 'en' ? audioRow : null,
       lang === 'en' ? btn('읽기', () => speak(q), { cls: 'chip', ico: 'volume' }) : null,
       lang === 'en' ? btn('천천히', () => speak(q, { rate: 0.6 }), { cls: 'chip' }) : null,
-      lang === 'en' ? saveBtn(() => ({ text: q, meaning: meaningForSave, type: 'word', source: '사전' })) : null
+      lang === 'en'
+        ? saveBtn(() => ({ text: q, meaning: aiMeaning || freeMeaning, type: 'word', source: '사전' }))
+        : null
     )
   );
   if (lang === 'en' && hasWord(q)) head.querySelector('.icon-btn')?.classList.add('on');
@@ -202,79 +210,63 @@ async function search(raw) {
     )
   );
 
-  // 이미지는 영어 검색어로 찾는 편이 결과가 좋다
-  let imageQueryResolved;
-  const imageQuery = new Promise((r) => (imageQueryResolved = r));
-  if (lang === 'en') imageQueryResolved(q);
-  loadImages(imgSec, imageQuery, signal);
+  // 이미지는 눌렀을 때만, 그때까지 나온 가장 알맞은 영어 단어로 찾는다
+  imgSec.set(
+    btn('이미지 보기', () => loadImages(imgSec, imageQuery(q, lang, found), signal), { cls: 'chip', ico: 'image' })
+  );
 
-  const loadFreeMeanings = async () => {
-    meanSec.loading();
-    try {
-      const list = await wordMeanings(q, lang, lang === 'en' ? 'ko' : 'en', { signal });
+  // AI 풀이와 무료 사전을 함께 시작한다 (AI를 기다리지 않고 무료 결과부터 보인다)
+  if (useAi) {
+    runAi(aiSec, q, lang, signal, (v) => {
+      if (lang === 'en' && v.pronunciation && !phon.textContent) phon.textContent = v.pronunciation;
+      const done = v.senses.filter((s) => s.complete);
+      found.aiWords = done.map((s) => s.english);
+      aiMeaning = done
+        .slice(0, 3)
+        .map((s) => s.korean)
+        .filter(Boolean)
+        .join(' / ');
+    });
+  }
+
+  meanSec.loading();
+  wordMeanings(q, lang, lang === 'en' ? 'ko' : 'en', { signal })
+    .then((list) => {
       if (!list.length) {
         meanSec.set(
           h('p', { class: 'muted' }, '번역 메모리에서 뜻을 찾지 못했습니다. 아래 다른 사전을 이용해 보세요.')
         );
-        imageQueryResolved(lang === 'ko' ? '' : q);
         return;
       }
       if (lang === 'en') {
-        meaningForSave = list.slice(0, 3).join(', ');
+        freeMeaning = list.slice(0, 3).join(', ');
         meanSec.set(
           h('p', { class: 'meaning' }, list.join(' · ')),
           h('p', { class: 'hint' }, '무료 번역 메모리(MyMemory) 결과라 부정확할 수 있습니다.')
         );
-      } else {
-        imageQueryResolved(list[0]);
-        meanSec.set(
-          h(
-            'ul',
-            { class: 'cand-list' },
-            list.map((w) =>
-              h(
-                'li',
-                { class: 'row' },
-                searchLink(w),
-                speakBtn(w),
-                saveBtn(() => ({ text: w, meaning: q, type: 'word', source: '사전' }))
-              )
-            )
-          ),
-          h('p', { class: 'hint' }, '단어를 누르면 영영 풀이와 발음을 볼 수 있습니다.')
-        );
+        return;
       }
-    } catch (e) {
-      if (e.name === 'AbortError') return;
-      meanSec.error(errorMessage(e));
-      imageQueryResolved(lang === 'ko' ? '' : q);
-    }
-  };
-
-  if (useAi) {
-    meanSec.hide();
-    aiSec.loading('Gemini가 풀이를 만드는 중…');
-    aiEntry(q, lang, { signal })
-      .then((entry) => {
-        renderAiEntry(aiSec, entry, lang, q);
-        const first = entry.entries?.[0];
-        if (lang === 'en') {
-          meaningForSave = (entry.entries || [])
-            .slice(0, 3)
-            .map((e) => e.korean)
-            .join(' / ');
-          if (entry.pronunciation && !phon.textContent) phon.textContent = entry.pronunciation;
-        } else imageQueryResolved(first?.english || '');
-      })
-      .catch((e) => {
-        if (e.name === 'AbortError') return;
-        aiSec.error(`${errorMessage(e)} — 무료 사전 결과를 대신 보여 드립니다.`);
-        meanSec.el.hidden = false;
-        loadFreeMeanings();
-      });
-  } else {
-    loadFreeMeanings();
-  }
+      found.candidates = list;
+      meanSec.set(
+        h(
+          'ul',
+          { class: 'cand-list' },
+          list.map((w) =>
+            h(
+              'li',
+              { class: 'row' },
+              searchLink(w),
+              speakBtn(w),
+              saveBtn(() => ({ text: w, meaning: q, type: 'word', source: '사전' }))
+            )
+          )
+        ),
+        h('p', { class: 'hint' }, '단어를 누르면 영영 풀이와 발음을 볼 수 있습니다.')
+      );
+    })
+    .catch((e) => {
+      if (e.name !== 'AbortError') meanSec.error(errorMessage(e));
+    });
 
   if (defSec) {
     defSec.loading();
@@ -329,50 +321,121 @@ async function search(raw) {
   }
 }
 
-function renderAiEntry(sec, entry, lang, q) {
-  const entries = Array.isArray(entry.entries) ? entry.entries : [];
-  if (!entries.length) {
-    sec.set(h('p', { class: 'muted' }, '풀이를 만들지 못했습니다.'));
-    return;
-  }
+/**
+ * AI 사전 풀이. 받는 대로 한 화면에 한 번씩 그리고, 끝나면 '저장된 풀이' 표시와 새로 풀이 버튼,
+ * 실패하면 받은 데까지는 두고 오류와 다시 시도 버튼을 보여 준다.
+ * @param {(view: object) => void} onView 그릴 때마다 entryView 결과로 불린다 (발음·저장할 뜻·이미지 검색어)
+ * @param {boolean} [fresh] 보관함을 건너뛰고 새로 풀이
+ */
+function runAi(sec, q, lang, signal, onView, fresh = false) {
+  const senses = h('div', { class: 'ai-senses' });
+  const synonyms = h('div', { class: 'chips', hidden: true });
+  const tip = h('p', { class: 'callout', hidden: true });
+  const status = h('div', { class: 'row wrap ai-status' });
+  const setStatus = (...nodes) => clear(status).append(...nodes.filter(Boolean));
+  const rerun = (useFresh) => () => runAi(sec, q, lang, signal, onView, useFresh);
   sec.set(
-    entries.map((e) =>
-      h(
-        'div',
-        { class: 'sense' },
-        h(
-          'div',
-          { class: 'row wrap' },
-          e.partOfSpeech ? h('span', { class: 'tag' }, e.partOfSpeech) : null,
-          lang === 'ko' ? searchLink(e.english) : null,
-          lang === 'ko' ? speakBtn(e.english) : null,
-          lang === 'ko'
-            ? saveBtn(() => ({ text: e.english, meaning: e.korean || q, type: 'word', source: '사전' }))
-            : null,
-          h('span', { class: lang === 'en' ? 'meaning' : 'muted' }, e.korean)
-        ),
-        e.nuance ? h('p', { class: 'nuance' }, e.nuance) : null,
-        Array.isArray(e.examples) && e.examples.length
-          ? h(
-              'ul',
-              { class: 'examples' },
-              e.examples.map((x) => exampleItem(x.en, x.ko))
-            )
-          : null
-      )
-    ),
-    Array.isArray(entry.synonyms) && entry.synonyms.length
-      ? h(
-          'div',
-          { class: 'chips' },
-          h('span', { class: 'muted small' }, '비슷한 말'),
-          entry.synonyms
-            .slice(0, 8)
-            .map((s) => h('button', { type: 'button', class: 'chip', onclick: () => search(s) }, s))
-        )
-      : null,
-    entry.tip ? h('p', { class: 'callout' }, icon('info'), ' ', entry.tip) : null,
+    senses,
+    synonyms,
+    tip,
+    status,
     h('p', { class: 'hint' }, 'AI가 만든 풀이는 틀릴 수 있습니다. 중요한 내용은 다른 사전으로 확인하세요.')
+  );
+  setStatus(h('p', { class: 'muted loading' }, h('span', { class: 'spinner' }), 'Gemini가 풀이를 쓰는 중…'));
+
+  let synCount = 0;
+  const draw = (entry, done) => {
+    const v = entryView(entry, { done });
+    // 다 받은 뜻은 한 번만 그리고, 자라는 중인 마지막 뜻만 다시 그린다 (누르던 버튼이 바뀌지 않게)
+    v.senses.forEach((s, i) => {
+      const old = senses.children[i];
+      if (old?.dataset.complete) return;
+      const el = senseEl(s, lang, q);
+      if (old) old.replaceWith(el);
+      else senses.append(el);
+    });
+    if (v.synonyms.length !== synCount) {
+      synCount = v.synonyms.length;
+      clear(synonyms).append(
+        h('span', { class: 'muted small' }, '비슷한 말'),
+        ...v.synonyms
+          .slice(0, 8)
+          .map((s) => h('button', { type: 'button', class: 'chip', onclick: () => search(s) }, s))
+      );
+      synonyms.hidden = !synCount;
+    }
+    tip.hidden = !v.tip;
+    clear(tip).append(icon('info'), ' ', v.tip);
+    onView(v);
+    return v;
+  };
+
+  let latest;
+  let frame = 0;
+  aiEntry(q, lang, {
+    signal,
+    fresh,
+    onPartial: (partial) => {
+      latest = partial;
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        if (!signal.aborted) draw(latest, false);
+      });
+    },
+  })
+    .then(({ entry, cached }) => {
+      cancelAnimationFrame(frame);
+      if (signal.aborted) return;
+      if (!draw(entry, true).senses.length) senses.append(h('p', { class: 'muted' }, '풀이를 만들지 못했습니다.'));
+      setStatus(
+        cached ? h('span', { class: 'badge saved' }, '저장된 풀이') : null,
+        h('span', { class: 'grow' }),
+        btn('새로 풀이', rerun(true), { cls: 'chip small', ico: 'back' })
+      );
+    })
+    .catch((e) => {
+      cancelAnimationFrame(frame);
+      if (signal.aborted) return;
+      if (latest) draw(latest, false);
+      setStatus(
+        h('p', { class: 'error-text grow' }, errorMessage(e)),
+        btn('다시 시도', rerun(fresh), { cls: 'chip small', ico: 'back' })
+      );
+    });
+}
+
+/** AI 풀이의 뜻 하나. 아직 받는 중인 뜻은 글자가 잘려 있을 수 있어 저장·검색·번역 버튼을 달지 않는다 */
+function senseEl(s, lang, q) {
+  // 한→영에서는 영어 단어가 표제어
+  let english = null;
+  if (lang === 'ko' && s.english) {
+    english = s.complete
+      ? [
+          searchLink(s.english),
+          speakBtn(s.english),
+          saveBtn(() => ({ text: s.english, meaning: s.korean || q, type: 'word', source: '사전' })),
+        ]
+      : h('b', { lang: 'en' }, s.english);
+  }
+  return h(
+    'div',
+    { class: 'sense', dataset: s.complete ? { complete: '1' } : null },
+    h(
+      'div',
+      { class: 'row wrap' },
+      s.partOfSpeech ? h('span', { class: 'tag' }, s.partOfSpeech) : null,
+      english,
+      h('span', { class: lang === 'en' ? 'meaning' : 'muted' }, s.korean)
+    ),
+    s.nuance ? h('p', { class: 'nuance' }, s.nuance) : null,
+    s.examples.length
+      ? h(
+          'ul',
+          { class: 'examples' },
+          s.examples.map((x) => exampleItem(x.en, x.ko, { translatable: s.complete }))
+        )
+      : null
   );
 }
 
@@ -413,20 +476,12 @@ function renderFreeDict(sec, d) {
   );
 }
 
-async function loadImages(sec, queryPromise, signal) {
+async function loadImages(sec, query, signal) {
   sec.loading('이미지를 찾는 중…');
-  const query = await queryPromise;
-  if (signal.aborted) return;
-  if (!query) {
-    sec.set(h('p', { class: 'muted' }, '이미지 검색어를 정하지 못했습니다.'));
-    return;
-  }
+  const google = `https://www.google.com/search?tbm=isch&q=${encodeURIComponent(query)}`;
   try {
     const imgs = await searchImages(query, { signal });
-    const more = externalLink(
-      '구글 이미지에서 더 보기',
-      `https://www.google.com/search?tbm=isch&q=${encodeURIComponent(query)}`
-    );
+    const more = externalLink('구글 이미지에서 더 보기', google);
     if (!imgs.length) {
       sec.set(h('p', { class: 'muted' }, `'${query}' 이미지가 없습니다.`), more);
       return;
@@ -455,7 +510,12 @@ async function loadImages(sec, queryPromise, signal) {
     if (e.name === 'AbortError') return;
     sec.set(
       h('p', { class: 'error-text' }, errorMessage(e)),
-      externalLink('구글 이미지에서 보기', `https://www.google.com/search?tbm=isch&q=${encodeURIComponent(query)}`)
+      h(
+        'div',
+        { class: 'chips' },
+        btn('다시 시도', () => loadImages(sec, query, signal), { cls: 'chip', ico: 'back' }),
+        externalLink('구글 이미지에서 보기', google)
+      )
     );
   }
 }
