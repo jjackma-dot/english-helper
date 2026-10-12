@@ -17,21 +17,20 @@ const STATUS = {
   reconnecting: '다시 연결 중…',
   paused: '일시정지됨',
 };
-const AWAY_MS = 3 * 60 * 1000; // 다른 탭·앱에 이만큼 머물면 대화를 끝낸다 (마이크·연결 정리)
+const AWAY_MS = 3 * 60 * 1000; // 다른 앱으로 가거나 화면을 끈 채 이만큼 지나면 대화를 끝낸다 (마이크·연결 정리)
 const BASIC_NOTE = '기본 음성 모드(음성 인식 + 기기 음성)로 대화합니다.';
 
 /**
  * @param {{getOptions: () => object|null}} o getOptions: 지금 튜터 옵션(+words). 시작할 수 없으면 null
- * @returns {{el: HTMLElement, show: () => void, hide: () => void}}
+ * @returns {{el: HTMLElement, stop: () => void}} stop: 진행 중인 대화를 끝낸다 (다른 탭으로 갈 때)
  */
 export function createVoiceTutor({ getOptions }) {
   let session = null; // 진행 중인 대화 {stop, setPaused, setDuplex?}
   let engine = '';
   let status = '';
   let paused = false;
-  let autoPaused = false; // 다른 탭·앱으로 가서 저절로 멈춤
+  let autoPaused = false; // 다른 앱으로 가거나 화면이 꺼져 저절로 멈춤
   let awayTimer = 0;
-  let inView = false;
   let turn = {}; // 지금 차례의 말풍선·교정 카드 {me, tutor, fix}
   let interimEl = null;
   let level = -1;
@@ -54,7 +53,12 @@ export function createVoiceTutor({ getOptions }) {
       h('b', null, '다른 앱으로 연습'),
       '은 쓸 수 있습니다.'
     ),
-    h('a', { class: 'btn primary voice-start', href: '#/settings' }, icon('settings', { size: 22 }), '설정에서 무료 키 넣기')
+    h(
+      'a',
+      { class: 'btn primary voice-start', href: '#/settings' },
+      icon('settings', { size: 22 }),
+      '설정에서 무료 키 넣기'
+    )
   );
   const statusText = h('span');
   const engineBadge = h('span', { class: 'badge' });
@@ -325,22 +329,10 @@ export function createVoiceTutor({ getOptions }) {
     }
   }
 
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden) autoPause();
-    else if (inView) autoResume();
-  });
+  // 다른 앱으로 가거나 화면이 꺼지면 잠시 멈추고(화면 켜짐 유지도 풀림), 돌아오면 이어 간다
+  document.addEventListener('visibilitychange', () => (document.hidden ? autoPause() : autoResume()));
   window.addEventListener('settings-changed', render);
   render();
 
-  return {
-    el,
-    show() {
-      inView = true;
-      if (!document.hidden) autoResume();
-    },
-    hide() {
-      inView = false;
-      autoPause();
-    },
-  };
+  return { el, stop: () => finish() };
 }

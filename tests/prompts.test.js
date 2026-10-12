@@ -123,10 +123,15 @@ test('음성 튜터 지시문: Live는 show_correction 도구, 영어로만 말�
 
 test('음성 튜터 지시문: 기본 음성 모드는 JSON 답 + 음성 인식 안내', () => {
   const basic = buildVoiceTutorSystem({ correction: 'each' }, { live: false });
-  assert.match(basic, /add an item to "corrections"/);
+  assert.match(basic, /fill in "correction" with my original sentence/);
   assert.match(basic, /"reply" is exactly what you say aloud/);
+  assert.match(basic, /Set "correction" to null/);
   assert.match(basic, /speech recognition/);
   assert.doesNotMatch(basic, /show_correction/);
+
+  // 답 하나에 교정은 하나: 끝나고 정리할 때는 가장 중요한 것만 카드로
+  const end = buildVoiceTutorSystem({ correction: 'end' }, { live: false });
+  assert.match(end, /spoken review of my main mistakes and fill in "correction" with the most important one/);
 });
 
 test('음성 모드 첫 문장: 수준·상황·주제·교정 방식', () => {

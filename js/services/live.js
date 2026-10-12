@@ -21,20 +21,21 @@ import {
   liveUrl,
   parseServerMessage,
   peakLevel,
+  planAfterClose,
   toolResponse,
 } from '../lib/live-protocol.js';
 
 const BLOCK_KEY = 'eh.liveBlocked.v1';
-const MAX_RECONNECTS = 3;
 const ECHO_GUARD_MS = 300; // 튜터 목소리가 끝나고 마이크를 다시 열기까지
 const STREAM_END_MS = 1000; // 마이크를 이만큼 보내지 않으면 서버에 알린다
 const GREETING_WAIT_MS = 8000; // 첫인사가 이만큼 늦으면 기다리지 않고 마이크를 연다
+const SETUP_WAIT_MS = 12000; // 연결하고 이만큼 설정 완료가 없으면 실패로 본다
 
 export const liveSupported = Boolean(
   window.WebSocket && window.AudioWorkletNode && navigator.mediaDevices?.getUserMedia
 );
 
-/** 오늘 Live를 쓰지 않기로 한 이유(한도 초과·모델 없음). 없으면 null */
+/** 오늘 Live를 쓰지 않기로 한 이유(한도 초과·모델 없음 등). 없으면 null */
 export function liveBlocked() {
   try {
     const v = JSON.parse(localStorage.getItem(BLOCK_KEY) || 'null');
@@ -103,7 +104,7 @@ function createPlayer(onPlaying) {
  *   on.status('connecting'|'thinking'|'listening'|'speaking'|'reconnecting'),
  *   on.userText(t)·on.tutorText(t): 받아쓰기 조각,
  *   on.turnEnd(), on.interrupted(), on.correction({original, corrected, explanation_ko}), on.level(0~1),
- *   on.fail({kind, message}): Live로 계속할 수 없음 (마이크·연결은 이미 정리됨)
+ *   on.fail({kind, message}): Live로 계속할 수 없음 (마이크·연결은 이미 정리됨). kind 'mic'·'key'는 기본 음성 모드로도 안 됨
  * @returns {{stop: () => void, setPaused: (on: boolean) => void, setDuplex: (on: boolean) => void}}
  */
 export function startLive({ system, duplex = false, on }) {
@@ -118,22 +119,25 @@ export function startLive({ system, duplex = false, on }) {
   let ready = false; // 지금 연결이 설정까지 마쳤는지
   let everReady = false;
   let greeted = false; // 튜터의 첫인사가 끝남 (그전에는 주변 소리가 첫인사를 끊지 않도록 마이크를 보내지 않는다)
-  let greetTimer = 0;
   let stopped = false;
   let paused = false;
   let generating = false; // 튜터가 답을 만드는 중
   let reconnects = 0;
-  let reconnectTimer = 0;
-  let swapTimer = 0;
   let swapPending = false;
-  let gateUntil = 0;
+  let gateUntil = 0; // 반이중: 이 시각까지는 튜터 목소리가 남아 있다고 본다
   let lastSentAt = 0;
   let streamEnded = true;
   let lastStatus = '';
+  const timers = { greet: 0, setup: 0, reconnect: 0, swap: 0, gate: 0 };
 
   const micCtx = new AudioContext();
   const player = createPlayer((playing) => {
-    if (!playing) gateUntil = performance.now() + ECHO_GUARD_MS;
+    if (stopped) return;
+    if (!playing) {
+      gateUntil = performance.now() + ECHO_GUARD_MS;
+      clearTimeout(timers.gate);
+      timers.gate = setTimeout(updateStatus, ECHO_GUARD_MS + 20);
+    }
     updateStatus();
   });
   micCtx.resume().catch(() => {});
@@ -143,9 +147,11 @@ export function startLive({ system, duplex = false, on }) {
     if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
   };
 
+  const tutorAudible = () => player.playing || performance.now() < gateUntil;
+
   function currentStatus() {
     if (!ready) return everReady ? 'reconnecting' : 'connecting';
-    if (player.playing) return 'speaking';
+    if (tutorAudible()) return 'speaking';
     return greeted ? 'listening' : 'thinking';
   }
 
@@ -156,7 +162,7 @@ export function startLive({ system, duplex = false, on }) {
   }
 
   function micOpen() {
-    return ready && greeted && !paused && (duplex || (!player.playing && performance.now() >= gateUntil));
+    return ready && greeted && !paused && (duplex || !tutorAudible());
   }
 
   function onChunk(pcm) {
@@ -167,6 +173,7 @@ export function startLive({ system, duplex = false, on }) {
       on.level(peakLevel(pcm));
       return;
     }
+    // 다시 연결하는 동안·튜터가 말하는 동안의 조각은 버린다
     on.level(0);
     if (ready && !streamEnded && performance.now() - lastSentAt > STREAM_END_MS) {
       send(AUDIO_STREAM_END);
@@ -176,10 +183,29 @@ export function startLive({ system, duplex = false, on }) {
 
   function connect() {
     ready = false;
+    generating = false;
+    streamEnded = true;
     updateStatus();
-    const sock = new WebSocket(liveUrl(key));
+    let sock;
+    try {
+      sock = new WebSocket(liveUrl(key));
+    } catch (e) {
+      closed({ kind: 'network', message: `Gemini Live에 연결할 수 없습니다: ${e.message}`, remember: false });
+      return;
+    }
     sock.binaryType = 'arraybuffer';
     ws = sock;
+    clearTimeout(timers.setup);
+    timers.setup = setTimeout(() => {
+      if (sock !== ws || ready) return;
+      ws = null;
+      sock.close();
+      closed({
+        kind: 'network',
+        message: 'Gemini Live가 응답하지 않습니다. 인터넷 연결을 확인하세요.',
+        remember: false,
+      });
+    }, SETUP_WAIT_MS);
     sock.onopen = () =>
       sock.send(JSON.stringify(buildSetup({ model: LIVE_MODELS[modelIdx], system, handle: resumeHandle })));
     sock.onmessage = (e) => {
@@ -187,19 +213,21 @@ export function startLive({ system, duplex = false, on }) {
       for (const ev of parseServerMessage(decodeFrame(e.data))) handleEvent(ev);
     };
     sock.onclose = (e) => {
-      if (sock === ws && !stopped) closed(e.code, e.reason);
+      if (sock !== ws || stopped) return;
+      ws = null;
+      closed(classifyLiveClose(e.code, e.reason));
     };
   }
 
   function greetingDone() {
-    clearTimeout(greetTimer);
+    clearTimeout(timers.greet);
     greeted = true;
     updateStatus();
   }
 
   /** 이어 말하기 정보로 새 연결을 열고 옛 연결은 닫는다 (마이크는 계속 켜 둔다) */
   function swap() {
-    clearTimeout(swapTimer);
+    clearTimeout(timers.swap);
     swapPending = false;
     const old = ws;
     ws = null;
@@ -210,12 +238,13 @@ export function startLive({ system, duplex = false, on }) {
   function handleEvent(ev) {
     switch (ev.type) {
       case 'setupComplete':
+        clearTimeout(timers.setup);
         ready = true;
         reconnects = 0;
         if (!everReady) {
           everReady = true;
           send(kickoffMessage()); // 튜터가 먼저 말을 건다
-          greetTimer = setTimeout(greetingDone, GREETING_WAIT_MS);
+          timers.greet = setTimeout(greetingDone, GREETING_WAIT_MS);
         }
         updateStatus();
         break;
@@ -253,43 +282,36 @@ export function startLive({ system, duplex = false, on }) {
         if (!generating) swap();
         else if (!swapPending) {
           swapPending = true;
-          swapTimer = setTimeout(swap, Math.max(0, (ev.ms ?? 5000) - 1000));
+          timers.swap = setTimeout(swap, Math.max(0, (ev.ms ?? 5000) - 1000));
         }
         break;
     }
   }
 
-  function closed(code, reason) {
-    const wasReady = ready;
+  /** @param {{kind: string, message: string, remember: boolean}} c 닫힌 이유 */
+  function closed(c) {
+    const setupDone = ready;
     ready = false;
-    const c = classifyLiveClose(code, reason);
-    if (c.kind === 'key') return fail(c);
-    if (!everReady) {
-      if (c.kind === 'model' && modelIdx < LIVE_MODELS.length - 1) {
-        modelIdx++;
-        return connect();
-      }
-      if (c.kind === 'quota' || c.kind === 'model') blockForToday(c.message);
-      return fail(c);
+    clearTimeout(timers.setup);
+    const plan = planAfterClose(c, { setupDone, everReady, modelIdx, reconnects });
+    if (plan.action === 'next-model') {
+      modelIdx++;
+      connect();
+    } else if (plan.action === 'reconnect') {
+      if (!plan.keepHandle) resumeHandle = null;
+      reconnects++;
+      updateStatus();
+      timers.reconnect = setTimeout(connect, plan.delayMs);
+    } else {
+      if (plan.remember) blockForToday(c.message);
+      fail(c);
     }
-    if (c.kind === 'quota') {
-      blockForToday(c.message);
-      return fail(c);
-    }
-    if (reconnects >= MAX_RECONNECTS) return fail(c);
-    // 이어 말하기로 붙지 못했으면(설정 전에 닫힘) 다음에는 새 대화로 연결한다
-    if (!wasReady) resumeHandle = null;
-    reconnects++;
-    updateStatus();
-    reconnectTimer = setTimeout(connect, 500 * reconnects);
   }
 
   function cleanup() {
     if (stopped) return;
     stopped = true;
-    clearTimeout(reconnectTimer);
-    clearTimeout(swapTimer);
-    clearTimeout(greetTimer);
+    for (const t of Object.values(timers)) clearTimeout(t);
     const sock = ws;
     ws = null;
     sock?.close(1000);

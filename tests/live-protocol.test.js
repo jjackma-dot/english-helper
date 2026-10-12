@@ -5,6 +5,7 @@ import {
   CHUNK_SAMPLES,
   LIVE_ENDPOINT,
   LIVE_MODELS,
+  MAX_RECONNECTS,
   START_TEXT,
   audioMessage,
   base64FromInt16,
@@ -19,6 +20,7 @@ import {
   liveUrl,
   parseServerMessage,
   peakLevel,
+  planAfterClose,
   rateFromMime,
   recentTurns,
   takeSentences,
@@ -70,7 +72,9 @@ test('보내는 메시지: 첫 요청·마이크 소리·소리 끝·도구 응�
   assert.deepEqual(kickoffMessage(), {
     clientContent: { turns: [{ role: 'user', parts: [{ text: START_TEXT }] }], turnComplete: true },
   });
-  assert.deepEqual(audioMessage('AAA='), { realtimeInput: { audio: { data: 'AAA=', mimeType: 'audio/pcm;rate=16000' } } });
+  assert.deepEqual(audioMessage('AAA='), {
+    realtimeInput: { audio: { data: 'AAA=', mimeType: 'audio/pcm;rate=16000' } },
+  });
   assert.equal(audioMessage('x', 8000).realtimeInput.audio.mimeType, 'audio/pcm;rate=8000');
   assert.deepEqual(AUDIO_STREAM_END, { realtimeInput: { audioStreamEnd: true } });
   assert.deepEqual(toolResponse([{ id: 'c1', name: 'show_correction', args: {} }]), {
@@ -135,22 +139,79 @@ test('rateFromMime', () => {
 });
 
 test('연결이 닫힌 이유 분류', () => {
-  assert.equal(classifyLiveClose(1008, 'API key not valid. Please pass a valid API key.').kind, 'key');
-  assert.equal(classifyLiveClose(1011, 'RESOURCE_EXHAUSTED: You exceeded your current quota').kind, 'quota');
-  assert.equal(
-    classifyLiveClose(1008, 'models/gemini-3.8-live is not found for API version v1beta, or is not supported').kind,
-    'model'
+  const key = classifyLiveClose(1008, 'API key not valid. Please pass a valid API key.');
+  assert.equal(key.kind, 'key');
+  assert.equal(key.remember, false); // 키를 고치면 바로 다시 쓸 수 있다
+  const quota = classifyLiveClose(1011, 'RESOURCE_EXHAUSTED: You exceeded your current quota');
+  assert.deepEqual([quota.kind, quota.remember], ['quota', true]);
+  assert.equal(classifyLiveClose(1011, 'Error 429 Too Many Requests').kind, 'quota');
+  const model = classifyLiveClose(
+    1008,
+    'models/gemini-3.8-live is not found for API version v1beta, or is not supported'
   );
+  assert.deepEqual([model.kind, model.remember], ['model', true]);
   assert.equal(classifyLiveClose(1008, 'Operation is not implemented, or supported, or enabled.').kind, 'model');
-  assert.equal(classifyLiveClose(1006, '').kind, 'network');
-  const other = classifyLiveClose(1011, 'Internal error encountered.');
-  assert.equal(other.kind, 'other');
-  assert.match(other.message, /코드 1011: Internal error encountered\./);
+  const net = classifyLiveClose(1006, '');
+  assert.deepEqual([net.kind, net.remember], ['network', false]);
+  assert.match(net.message, /인터넷 연결을 확인하세요\. \(코드 1006\)$/);
+
+  // 서버 내부 오류는 잠깐일 수 있다 / 설정 거부(1007·1008)는 다시 해도 같다
+  const internal = classifyLiveClose(1011, 'Internal error encountered.');
+  assert.deepEqual([internal.kind, internal.remember], ['other', false]);
+  assert.match(internal.message, /코드 1011: Internal error encountered\./);
+  const invalid = classifyLiveClose(1007, 'Request contains an invalid argument.');
+  assert.deepEqual([invalid.kind, invalid.remember], ['other', true]);
   assert.match(classifyLiveClose(1007, '').message, /\(코드 1007\)/);
 });
 
+test('닫힌 뒤 할 일: 다음 모델·다시 연결·기본 음성 모드', () => {
+  const c = (code, reason) => classifyLiveClose(code, reason);
+  const first = { setupDone: false, everReady: false, modelIdx: 0, reconnects: 0 };
+  // 시작할 때 모델이 없으면 예비 Live 모델로, 그것도 없으면 그날은 기본 음성 모드
+  assert.deepEqual(planAfterClose(c(1008, 'model is not found'), first), { action: 'next-model' });
+  assert.deepEqual(planAfterClose(c(1008, 'model is not found'), { ...first, modelIdx: LIVE_MODELS.length - 1 }), {
+    action: 'fail',
+    remember: true,
+  });
+  // 시작 전에 닫히면 Live를 그만둔다. 인터넷 문제·서버 오류는 그날 기억하지 않는다
+  assert.deepEqual(planAfterClose(c(1011, 'RESOURCE_EXHAUSTED'), first), { action: 'fail', remember: true });
+  assert.deepEqual(planAfterClose(c(1006, ''), first), { action: 'fail', remember: false });
+  assert.deepEqual(planAfterClose(c(1011, 'Internal error'), first), { action: 'fail', remember: false });
+  assert.deepEqual(planAfterClose(c(1007, 'invalid argument'), first), { action: 'fail', remember: true });
+  // 키 문제는 언제든 바로 끝
+  assert.deepEqual(planAfterClose(c(1008, 'API key not valid'), { ...first, everReady: true }), {
+    action: 'fail',
+    remember: false,
+  });
+
+  // 대화 중에 끊기면 이어 말하기 정보로 다시 연결 (점점 늦게, 최대 MAX_RECONNECTS번)
+  const talking = { setupDone: true, everReady: true, modelIdx: 0, reconnects: 0 };
+  assert.deepEqual(planAfterClose(c(1011, 'Internal error'), talking), {
+    action: 'reconnect',
+    keepHandle: true,
+    delayMs: 1000,
+  });
+  // 다시 연결이 설정 전에 닫혔으면 handle을 버리고 새로 (인터넷 문제면 그대로 둔다)
+  const retry = { ...talking, setupDone: false, reconnects: 1 };
+  assert.deepEqual(planAfterClose(c(1007, 'Invalid resumption handle'), retry), {
+    action: 'reconnect',
+    keepHandle: false,
+    delayMs: 2000,
+  });
+  assert.deepEqual(planAfterClose(c(1006, ''), retry), { action: 'reconnect', keepHandle: true, delayMs: 2000 });
+  assert.deepEqual(planAfterClose(c(1006, ''), { ...retry, reconnects: MAX_RECONNECTS }), {
+    action: 'fail',
+    remember: false,
+  });
+  // 대화 중 한도 초과는 다시 연결해도 소용없다
+  assert.deepEqual(planAfterClose(c(1011, 'quota exceeded'), talking), { action: 'fail', remember: true });
+});
+
 test('PCM 변환: 실수↔16비트, 리틀 엔디언 base64 왕복', () => {
-  assert.deepEqual([...floatToInt16(Float32Array.from([0, 1, -1, 2, -2, 0.5]))], [0, 32767, -32768, 32767, -32768, 16383]);
+  assert.deepEqual(
+    [...floatToInt16(Float32Array.from([0, 1, -1, 2, -2, 0.5]))],
+    [0, 32767, -32768, 32767, -32768, 16383]
+  );
   assert.deepEqual([...int16ToFloat32(Int16Array.from([-32768, 0, 16384]))], [-1, 0, 0.5]);
 
   // [1, -2] → 바이트 01 00 FE FF

@@ -14,6 +14,7 @@ export async function openMic() {
     if (e.name === 'NotAllowedError')
       throw new Error('마이크 권한이 거부되었습니다. 브라우저(앱) 권한에서 마이크를 허용하세요.');
     if (e.name === 'NotFoundError') throw new Error('마이크를 찾을 수 없습니다.');
+    if (e.name === 'NotReadableError') throw new Error('다른 앱이 마이크를 쓰고 있어 열 수 없습니다.');
     throw e;
   }
 }

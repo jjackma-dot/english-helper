@@ -12,6 +12,7 @@ export const LIVE_MODELS = ['gemini-3.8-live', 'gemini-3.1-flash-live-preview'];
 export const MIC_RATE = 16000; // 보내는 마이크 소리: 16kHz 16비트 모노
 export const SPEAKER_RATE = 24000; // 받는 튜터 목소리: 24kHz 16비트 모노
 export const CHUNK_SAMPLES = 640; // 40ms 단위로 보낸다
+export const MAX_RECONNECTS = 3; // 끊긴 연결을 이어서 다시 시도하는 횟수
 
 /** 튜터가 먼저 말을 걸게 하는 첫 요청 (화면에는 보이지 않음) */
 export const START_TEXT = 'Greet me briefly and ask one easy question to start.';
@@ -145,25 +146,59 @@ export function parseServerMessage(msg) {
 
 /**
  * 연결이 닫힌 이유를 보고 다음 행동을 정한다.
- * @returns {{kind: 'key'|'quota'|'model'|'network'|'other', message: string}}
- *   key: 키 문제(기본 음성 모드도 같은 키라 소용없음) / quota·model: 오늘은 Live를 쓰지 않음 / 그 밖: 이번만 대체
+ * @returns {{kind: 'key'|'quota'|'model'|'network'|'other', message: string, remember: boolean}}
+ *   key: 키 문제(기본 음성 모드도 같은 키라 소용없음) / quota: 한도 초과 / model: 모델을 쓸 수 없음 / 그 밖: 이번만 대체
+ *   remember: 오늘 다시 해도 같을 실패(한도 초과·모델 없음·설정 거부 1007/1008). 그날은 바로 기본 음성 모드로 시작한다
  */
 export function classifyLiveClose(code, reason = '') {
   const r = String(reason || '').trim();
   const detail = `(코드 ${code}${r ? `: ${r}` : ''})`;
   if (/API[_ ]?KEY|PERMISSION_DENIED|unregistered caller/i.test(r)) {
-    return { kind: 'key', message: `Gemini API 키로 음성 대화를 할 수 없습니다. 설정에서 키를 확인하세요. ${detail}` };
+    return {
+      kind: 'key',
+      message: `Gemini API 키로 음성 대화를 할 수 없습니다. 설정에서 키를 확인하세요. ${detail}`,
+      remember: false,
+    };
   }
   if (/RESOURCE_EXHAUSTED|quota|\b429\b|rate.?limit/i.test(r)) {
-    return { kind: 'quota', message: `오늘 Gemini Live 무료 사용 한도를 다 썼습니다. ${detail}` };
+    return { kind: 'quota', message: `오늘 Gemini Live 무료 사용 한도를 다 썼습니다. ${detail}`, remember: true };
   }
   if (/not found|NOT_FOUND|not supported|unsupported|not implemented|unknown model|not available/i.test(r)) {
-    return { kind: 'model', message: `Gemini Live 모델을 쓸 수 없습니다. ${detail}` };
+    return { kind: 'model', message: `Gemini Live 모델을 쓸 수 없습니다. ${detail}`, remember: true };
   }
   if (code === 1006 && !r) {
-    return { kind: 'network', message: 'Gemini Live에 연결하지 못했습니다. 인터넷 연결을 확인하세요.' };
+    return {
+      kind: 'network',
+      message: `Gemini Live에 연결하지 못했습니다. 인터넷 연결을 확인하세요. ${detail}`,
+      remember: false,
+    };
   }
-  return { kind: 'other', message: `Gemini Live 연결이 끊어졌습니다. ${detail}` };
+  return {
+    kind: 'other',
+    message: `Gemini Live 연결이 끊어졌습니다. ${detail}`,
+    remember: code === 1007 || code === 1008,
+  };
+}
+
+/**
+ * 연결이 닫힌 뒤 할 일을 정한다.
+ * @param {{kind: string, remember: boolean}} c classifyLiveClose 결과
+ * @param {{setupDone: boolean, everReady: boolean, modelIdx: number, reconnects: number}} s
+ *   setupDone: 닫힌 연결이 설정까지 마쳤는지 / everReady: 이번 대화에서 한 번이라도 설정까지 마쳤는지
+ *   reconnects: 설정 완료 없이 이어서 다시 연결한 횟수
+ * @returns {{action: 'next-model'|'reconnect'|'fail', remember?: boolean, keepHandle?: boolean, delayMs?: number}}
+ *   fail: Live를 그만두고 기본 음성 모드로 (remember: 그날은 Live를 건너뜀)
+ */
+export function planAfterClose(c, { setupDone, everReady, modelIdx, reconnects }) {
+  if (c.kind === 'key') return { action: 'fail', remember: false };
+  if (!everReady) {
+    if (c.kind === 'model' && modelIdx < LIVE_MODELS.length - 1) return { action: 'next-model' };
+    return { action: 'fail', remember: c.remember };
+  }
+  if (c.kind === 'quota') return { action: 'fail', remember: true };
+  if (reconnects >= MAX_RECONNECTS) return { action: 'fail', remember: false };
+  // 이어 말하기 정보로 붙지 못했으면(설정 전에 닫힘) 다음에는 새 대화로 연결한다. 인터넷 문제였으면 그대로 둔다
+  return { action: 'reconnect', keepHandle: setupDone || c.kind === 'network', delayMs: 1000 * (reconnects + 1) };
 }
 
 /* ---------- 음성 데이터 ---------- */

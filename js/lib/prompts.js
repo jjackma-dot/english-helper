@@ -260,7 +260,7 @@ function oneLine(s) {
  */
 export function buildVoiceTutorSystem(o = {}, { live = true } = {}) {
   const opt = { ...DEFAULT_TUTOR_OPTIONS, ...o, voice: true };
-  const fix = live ? 'call show_correction' : 'add an item to "corrections"';
+  const fix = live ? 'call show_correction' : 'fill in "correction"';
   const ko = opt.koreanHelp ? ' (with a short explanation_ko in Korean)' : '';
   const lines = [buildTutorPrompt(opt), '', '[Voice session rules - these override the rules above]'];
   lines.push(
@@ -278,14 +278,16 @@ export function buildVoiceTutorSystem(o = {}, { live = true } = {}) {
     );
   } else if (opt.correction === 'end') {
     lines.push(
-      `- Don't correct me during the conversation. When I say "end session", ${fix} for each of my main mistakes${ko}, then give a short spoken review.`
+      live
+        ? `- Don't correct me during the conversation. When I say "end session", call show_correction for each of my main mistakes${ko}, then give a short spoken review.`
+        : `- Don't correct me during the conversation. When I say "end session", give a short spoken review of my main mistakes and fill in "correction" with the most important one${ko}.`
     );
   } else {
     lines.push(`- Don't ${fix} unless I ask you to correct me.`);
   }
   if (!live) {
     lines.push(
-      '- "reply" is exactly what you say aloud: no markdown, emojis or lists. Leave "corrections" empty when there is nothing to correct.'
+      '- "reply" is exactly what you say aloud: no markdown, emojis or lists. Set "correction" to null when there is nothing to correct.'
     );
     lines.push('- My messages come from speech recognition, so ignore missing punctuation and capitalization.');
   }

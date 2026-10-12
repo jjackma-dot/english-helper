@@ -300,10 +300,9 @@ export function show(params) {
     scenarioSelect.value = sc;
     onOptionChange({ scenario: sc });
   }
-  voice.show();
 }
 
-/** 다른 탭으로 가면 음성 대화를 잠시 멈춘다 */
+/** 다른 탭으로 가면 음성 대화를 끝낸다 (마이크·연결·화면 켜짐 유지 정리) */
 export function hide() {
-  voice.hide();
+  voice.stop();
 }
