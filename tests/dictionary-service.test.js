@@ -50,7 +50,7 @@ test('aiEntry: 짧은 스키마로 스트리밍하고, 같은 검색어는 보�
   assert.equal(partials[0].entries[0].korean, '달');
 
   const { generationConfig } = calls[0].body;
-  assert.equal(generationConfig.maxOutputTokens, 1200);
+  assert.equal(generationConfig.maxOutputTokens, 2048);
   const schema = generationConfig.responseSchema;
   assert.deepEqual(schema.propertyOrdering, ['pronunciation', 'entries', 'synonyms', 'tip']);
   assert.deepEqual(schema.properties.entries.items.propertyOrdering, [

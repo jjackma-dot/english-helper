@@ -4,6 +4,7 @@
 import { getSettings, DEFAULT_GEMINI_MODEL } from '../store.js';
 import { geminiErrorMessage, parseJsonLoose } from '../lib/api-parse.js';
 import { parsePartialJson } from '../lib/partial-json.js';
+import { doNotCache } from './ai-cache.js';
 import {
   bareModel,
   chunkText,
@@ -16,6 +17,8 @@ import {
 export const BASE = 'https://generativelanguage.googleapis.com/v1beta';
 const COOLDOWN_KEY = 'eh.geminiCooldown.v1';
 const MAX_ATTEMPTS = 4; // 한 번 요청에 보내는 최대 네트워크 요청 수
+const UPLOAD_MS_PER_MB = 10000; // 보내는 데 걸릴 시간 여유 (느린 휴대폰 업로드 약 0.8Mbps 기준)
+const BIG_BODY_BYTES = 2e6; // 이보다 큰 요청(긴 녹음 등)은 시간이 넘으면 다시 보내지 않는다 (데이터 낭비)
 
 export function apiKey() {
   return getSettings().geminiKey || '';
@@ -141,6 +144,9 @@ async function call(path, { method = 'GET', body, signal, key } = {}) {
  */
 async function streamOnce(model, body, { signal, key, onText, firstChunkMs, idleMs, totalMs }) {
   const ctl = linkedController(signal);
+  const payload = JSON.stringify(body);
+  // 녹음처럼 큰 요청은 보내는 시간도 첫 응답 전에 들어가므로 크기만큼 여유를 더 준다
+  const uploadMs = (payload.length / 1e6) * UPLOAD_MS_PER_MB;
   let timer = 0;
   let timeoutMsg = '';
   const arm = (ms, msg) => {
@@ -153,8 +159,8 @@ async function streamOnce(model, body, { signal, key, onText, firstChunkMs, idle
   const totalTimer = setTimeout(() => {
     timeoutMsg = 'Gemini 응답이 너무 오래 걸립니다.';
     ctl.abort();
-  }, totalMs);
-  arm(firstChunkMs, 'Gemini가 응답하지 않습니다.');
+  }, totalMs + uploadMs);
+  arm(firstChunkMs + uploadMs, 'Gemini가 응답하지 않습니다.');
 
   let text = '';
   let finishReason = '';
@@ -164,7 +170,7 @@ async function streamOnce(model, body, { signal, key, onText, firstChunkMs, idle
     const res = await fetch(`${BASE}/${modelPath(model)}:streamGenerateContent?alt=sse`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
-      body: JSON.stringify(body),
+      body: payload,
       signal: ctl.signal,
     });
     if (!res.ok) {
@@ -246,6 +252,7 @@ export async function generate(o) {
     if (o.schema) base.generationConfig.responseSchema = o.schema;
   }
   if (o.maxOutputTokens) base.generationConfig.maxOutputTokens = o.maxOutputTokens;
+  const bigBody = JSON.stringify(base).length > BIG_BODY_BYTES;
 
   const preferred = o.model || getSettings().geminiModel || DEFAULT_GEMINI_MODEL;
   const cooldowns = readCooldowns();
@@ -292,9 +299,9 @@ export async function generate(o) {
         try {
           return parseJsonLoose(r.text);
         } catch (e) {
-          // 출력 한도에 걸려 잘렸으면 읽을 수 있는 데까지라도 돌려준다
+          // 출력 한도에 걸려 잘렸으면 읽을 수 있는 데까지라도 돌려준다 (잘린 결과는 보관하지 않는다)
           const partial = parsePartialJson(r.text);
-          if (r.finishReason === 'MAX_TOKENS' && partial !== undefined) return partial;
+          if (r.finishReason === 'MAX_TOKENS' && partial !== undefined) return doNotCache(partial);
           throw e;
         }
       } catch (e) {
@@ -320,7 +327,13 @@ export async function generate(o) {
           }
           break; // 다음 모델
         }
-        // 시간 초과·네트워크 오류: 같은 모델로 한 번 더, 그다음 모델
+        // 시간 초과·네트워크 오류: 같은 모델로 한 번 더, 그다음 모델.
+        // 긴 녹음처럼 큰 요청은 다시 보내 봐야 같은 이유로 실패하고 데이터만 쓰므로 바로 알린다
+        if (bigBody) {
+          throw new Error(
+            '보낼 녹음이 커서 Gemini에 보내지 못했습니다. 인터넷 연결을 확인하거나 더 짧게 녹음해 보세요.'
+          );
+        }
         if (!retried) {
           retried = true;
           await sleep(600, o.signal);

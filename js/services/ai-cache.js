@@ -8,7 +8,14 @@ const MAX_ENTRIES = 3000;
 
 const memory = new Map();
 const inflight = new Map();
+const skip = new WeakSet(); // 보관하지 않을 결과 (출력 한도에 걸려 잘린 AI 답 등)
 let dbPromise = null;
+
+/** 이 결과는 보관함에 넣지 않는다 (객체만 표시할 수 있다). 받은 값을 그대로 돌려준다 */
+export function doNotCache(value) {
+  if (value && typeof value === 'object') skip.add(value);
+  return value;
+}
 
 function openDb() {
   if (!dbPromise) {
@@ -112,7 +119,7 @@ export async function cached(key, make, { fresh = false } = {}) {
   }
   const p = (async () => {
     const value = await make();
-    await setCached(key, value);
+    if (!skip.has(value)) await setCached(key, value);
     return value;
   })();
   inflight.set(key, p);

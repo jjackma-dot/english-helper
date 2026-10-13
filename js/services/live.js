@@ -103,7 +103,8 @@ function createPlayer(onPlaying) {
  * @param {{system: string, duplex?: boolean, on: object}} o duplex: 튜터가 말하는 중에도 마이크를 보냄(이어폰용)
  *   on.status('connecting'|'thinking'|'listening'|'speaking'|'reconnecting'),
  *   on.userText(t)·on.tutorText(t): 받아쓰기 조각,
- *   on.turnEnd(), on.interrupted(), on.correction({original, corrected, explanation_ko}), on.level(0~1),
+ *   on.turnStart(): 튜터 목소리가 새로 나오기 시작함, on.turnEnd(), on.interrupted(),
+ *   on.correction({original, corrected, explanation_ko}), on.level(0~1),
  *   on.fail({kind, message}): Live로 계속할 수 없음 (마이크·연결은 이미 정리됨). kind 'mic'·'key'는 기본 음성 모드로도 안 됨
  * @returns {{stop: () => void, setPaused: (on: boolean) => void, setDuplex: (on: boolean) => void}}
  */
@@ -124,6 +125,7 @@ export function startLive({ system, duplex = false, on }) {
   let generating = false; // 튜터가 답을 만드는 중
   let reconnects = 0;
   let swapPending = false;
+  let resumable = false; // 지금 옮겨도 대화를 잃지 않음 (마지막 일 뒤에 이어 말하기 정보가 새로 왔음)
   let gateUntil = 0; // 반이중: 이 시각까지는 튜터 목소리가 남아 있다고 본다
   let lastSentAt = 0;
   let streamEnded = true;
@@ -184,6 +186,7 @@ export function startLive({ system, duplex = false, on }) {
   function connect() {
     ready = false;
     generating = false;
+    resumable = false;
     streamEnded = true;
     updateStatus();
     let sock;
@@ -249,14 +252,19 @@ export function startLive({ system, duplex = false, on }) {
         updateStatus();
         break;
       case 'audio':
-        generating = true;
+        // 받아쓰기는 차례와 순서가 어긋나 올 수 있으므로 '답을 만드는 중'은 소리로만 판단한다
+        if (!generating) {
+          generating = true;
+          resumable = false;
+          on.turnStart?.();
+        }
         if (!paused) player.play(int16FromBase64(ev.data), ev.rate);
         break;
       case 'userText':
+        resumable = false; // 학습자가 말하는 중: 새 이어 말하기 정보가 올 때까지 옮기지 않는다
         on.userText(ev.text);
         break;
       case 'tutorText':
-        generating = true;
         on.tutorText(ev.text);
         break;
       case 'interrupted':
@@ -268,7 +276,6 @@ export function startLive({ system, duplex = false, on }) {
         generating = false;
         if (!greeted) greetingDone();
         on.turnEnd();
-        if (swapPending) swap();
         break;
       case 'toolCall':
         for (const c of ev.calls) if (c.name === 'show_correction') on.correction(c.args);
@@ -276,14 +283,19 @@ export function startLive({ system, duplex = false, on }) {
         break;
       case 'resumeHandle':
         resumeHandle = ev.handle;
+        resumable = true;
+        if (swapPending && !generating) swap();
+        break;
+      case 'notResumable':
+        resumable = false;
         break;
       case 'goAway':
-        // 곧 끊긴다: 튜터 말이 끝나면(늦어도 끊기기 1초 전) 새로 연결한다
-        if (!generating) swap();
-        else if (!swapPending) {
+        // 곧 끊긴다: 대화를 잃지 않는 때(이어 말하기 정보가 새로 온 뒤) 옮기고, 늦어도 끊기기 1초 전에는 옮긴다
+        if (!swapPending) {
           swapPending = true;
           timers.swap = setTimeout(swap, Math.max(0, (ev.ms ?? 5000) - 1000));
         }
+        if (resumable && !generating) swap();
         break;
     }
   }

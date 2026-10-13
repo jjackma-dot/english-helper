@@ -22,11 +22,13 @@ export function liveUrl(key) {
   return `${LIVE_ENDPOINT}?key=${encodeURIComponent(key)}`;
 }
 
-/** 학습자의 틀린 말을 화면에 교정 카드로 보여 주는 도구 (대화를 멈추지 않음) */
+/**
+ * 학습자의 틀린 말을 화면에 교정 카드로 보여 주는 도구 (대화를 멈추지 않음).
+ * behavior는 넣지 않는다: gemini-3.8-live는 기본이 비동기(NON_BLOCKING)이고, 예비 모델 3.1은 동기 호출만 지원한다
+ */
 export const CORRECTION_TOOL = {
   name: 'show_correction',
   description: 'Show the learner a written correction of their last utterance.',
-  behavior: 'NON_BLOCKING',
   parameters: {
     type: 'OBJECT',
     properties: {
@@ -79,14 +81,17 @@ export function audioMessage(base64, rate = MIC_RATE) {
 /** 마이크를 1초 넘게 보내지 않을 때 서버의 말소리 감지에 알린다 */
 export const AUDIO_STREAM_END = { realtimeInput: { audioStreamEnd: true } };
 
-/** 교정 카드를 보여 줬다고 답한다 (SILENT: 튜터가 이 일로 따로 말하지 않음) */
+/**
+ * 교정 카드를 보여 줬다고 답한다 (SILENT: 튜터가 이 일로 따로 말하지 않음).
+ * 공식 예제는 scheduling을 response 안에, API 참조는 바깥에 두므로 두 곳에 모두 넣는다
+ */
 export function toolResponse(calls) {
   return {
     toolResponse: {
       functionResponses: calls.map((c) => ({
         id: c.id,
         name: c.name,
-        response: { result: 'shown' },
+        response: { result: 'shown', scheduling: 'SILENT' },
         scheduling: 'SILENT',
       })),
     },
@@ -114,7 +119,7 @@ export function rateFromMime(mime, fallback = SPEAKER_RATE) {
 /**
  * 서버 메시지 하나를 처리할 사건 목록으로 바꾼다 (처리 순서대로).
  * @returns {Array<{type: 'setupComplete'|'interrupted'|'userText'|'audio'|'tutorText'|'turnComplete'|'toolCall'
- *   |'resumeHandle'|'goAway', text?: string, data?: string, rate?: number, calls?: object[], handle?: string,
+ *   |'resumeHandle'|'notResumable'|'goAway', text?: string, data?: string, rate?: number, calls?: object[], handle?: string,
  *   ms?: number|null}>}
  */
 export function parseServerMessage(msg) {
@@ -140,6 +145,7 @@ export function parseServerMessage(msg) {
   }
   const r = msg.sessionResumptionUpdate;
   if (r?.resumable && r.newHandle) out.push({ type: 'resumeHandle', handle: r.newHandle });
+  else if (r && !r.resumable) out.push({ type: 'notResumable' }); // 답을 만드는 중 등: 지금 옮기면 대화 일부를 잃는다
   if (msg.goAway) out.push({ type: 'goAway', ms: parseDuration(msg.goAway.timeLeft) });
   return out;
 }
@@ -148,7 +154,8 @@ export function parseServerMessage(msg) {
  * 연결이 닫힌 이유를 보고 다음 행동을 정한다.
  * @returns {{kind: 'key'|'quota'|'model'|'network'|'other', message: string, remember: boolean}}
  *   key: 키 문제(기본 음성 모드도 같은 키라 소용없음) / quota: 한도 초과 / model: 모델을 쓸 수 없음 / 그 밖: 이번만 대체
- *   remember: 오늘 다시 해도 같을 실패(한도 초과·모델 없음·설정 거부 1007/1008). 그날은 바로 기본 음성 모드로 시작한다
+ *   remember: 오늘 다시 해도 같을 실패(일일 한도·모델 없음·설정 거부 1007/1008). 그날은 바로 기본 음성 모드로 시작한다.
+ *   분당 한도처럼 잠깐인 초과는 기억하지 않는다 (닫힌 이유 문구로 일일 한도인지 가린다)
  */
 export function classifyLiveClose(code, reason = '') {
   const r = String(reason || '').trim();
@@ -161,7 +168,10 @@ export function classifyLiveClose(code, reason = '') {
     };
   }
   if (/RESOURCE_EXHAUSTED|quota|\b429\b|rate.?limit/i.test(r)) {
-    return { kind: 'quota', message: `오늘 Gemini Live 무료 사용 한도를 다 썼습니다. ${detail}`, remember: true };
+    if (/per.?day|daily|limit:\s*0\b/i.test(r)) {
+      return { kind: 'quota', message: `오늘 Gemini Live 무료 사용 한도를 다 썼습니다. ${detail}`, remember: true };
+    }
+    return { kind: 'quota', message: `Gemini Live 사용량이 잠시 많습니다. 잠시 후 다시 시도하세요. ${detail}`, remember: false };
   }
   if (/not found|NOT_FOUND|not supported|unsupported|not implemented|unknown model|not available/i.test(r)) {
     return { kind: 'model', message: `Gemini Live 모델을 쓸 수 없습니다. ${detail}`, remember: true };
@@ -195,7 +205,7 @@ export function planAfterClose(c, { setupDone, everReady, modelIdx, reconnects }
     if (c.kind === 'model' && modelIdx < LIVE_MODELS.length - 1) return { action: 'next-model' };
     return { action: 'fail', remember: c.remember };
   }
-  if (c.kind === 'quota') return { action: 'fail', remember: true };
+  if (c.kind === 'quota') return { action: 'fail', remember: c.remember };
   if (reconnects >= MAX_RECONNECTS) return { action: 'fail', remember: false };
   // 이어 말하기 정보로 붙지 못했으면(설정 전에 닫힘) 다음에는 새 대화로 연결한다. 인터넷 문제였으면 그대로 둔다
   return { action: 'reconnect', keepHandle: setupDone || c.kind === 'network', delayMs: 1000 * (reconnects + 1) };

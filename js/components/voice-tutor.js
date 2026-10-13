@@ -19,6 +19,7 @@ const STATUS = {
   paused: '일시정지됨',
 };
 const AWAY_MS = 3 * 60 * 1000; // 다른 앱으로 가거나 화면을 끈 채 이만큼 지나면 대화를 끝낸다 (마이크·연결 정리)
+const LATE_TEXT_MS = 1500; // 차례가 끝난 뒤 이만큼 안에 온 받아쓰기는 끝난 차례의 말풍선에 붙인다 (순서가 어긋나 올 수 있음)
 const BASIC_NOTE = '기본 음성 모드(음성 인식 + 기기 음성)로 대화합니다.';
 
 /**
@@ -32,7 +33,7 @@ export function createVoiceTutor({ getOptions }) {
   let paused = false;
   let autoPaused = false; // 다른 앱으로 가거나 화면이 꺼져 저절로 멈춤
   let awayTimer = 0;
-  let turn = {}; // 지금 차례의 말풍선·교정 카드 {me, tutor, fix}
+  let turn = {}; // 지금 차례의 말풍선·교정 카드 {me, tutor, fix, endedAt}
   let interimEl = null;
   let level = -1;
 
@@ -163,7 +164,10 @@ export function createVoiceTutor({ getOptions }) {
       userText: (t) => addText('me', t),
       tutorText: (t) => addText('tutor', t),
       interim: showInterim,
-      turnEnd: () => (turn = {}),
+      turnStart: () => {
+        if (turn.endedAt) turn = {};
+      },
+      turnEnd: () => (turn.endedAt = performance.now()),
       interrupted: () => {
         turn.tutor?.classList.add('cut');
         turn = {};
@@ -239,6 +243,7 @@ export function createVoiceTutor({ getOptions }) {
 
   function addText(role, text) {
     if (role === 'me') showInterim('');
+    if (turn.endedAt && performance.now() - turn.endedAt > LATE_TEXT_MS) turn = {};
     let b = turn[role];
     if (!b) {
       b = h('div', { class: `bubble ${role}`, lang: 'en' });

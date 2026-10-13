@@ -153,3 +153,26 @@ test('저작권(RECITATION)·안전 필터로 막히면 다시 시도하지 않�
   await assert.rejects(generate({ prompt: 'x', key: 'k' }), (e) => e.reason === 'SAFETY');
   assert.equal(calls2.length, 1);
 });
+
+test('긴 녹음처럼 큰 요청은 시간이 넘어도 다시 보내지 않는다 (데이터 낭비 방지)', async () => {
+  const calls = mockFetch([
+    (url, body, init) =>
+      new Promise((_, reject) => init.signal.addEventListener('abort', () => reject(new DOMException('x', 'AbortError')))),
+  ]);
+  const big = 'A'.repeat(2.1e6);
+  const p = generate({ parts: [{ inlineData: { mimeType: 'audio/wav', data: big } }], key: 'k', firstChunkMs: 10 });
+  await assert.rejects(p, /녹음이 커서/);
+  assert.equal(calls.length, 1);
+});
+
+test('출력 한도에 걸려 잘린 JSON은 돌려주되 보관함에 넣지 않는다', async () => {
+  const { cached, cacheKey } = await import('../js/services/ai-cache.js');
+  const calls = mockFetch([() => sse([part('{"entries":[{"korean":"달리다"},{"korean":"운영', 'MAX_TOKENS')])]);
+  const make = () => generate({ prompt: 'run', schema: { type: 'OBJECT' }, key: 'k' });
+  const key = cacheKey('test:v1', 'run');
+  const first = await cached(key, make);
+  assert.deepEqual(first.value, { entries: [{ korean: '달리다' }, { korean: '운영' }] });
+  const second = await cached(key, make);
+  assert.equal(second.cached, false);
+  assert.equal(calls.length, 2);
+});

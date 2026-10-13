@@ -8,6 +8,9 @@ import { getVoices, speak, ttsSupported } from '../speech.js';
 import { VERSION } from '../version.js';
 import { canInstall, promptInstall } from '../install.js';
 
+// 글로 답하지 않는 모델 (음성·이미지·영상 생성, 받아쓰기 전용 등): 고르면 사전·번역이 모두 실패한다
+const NOT_TEXT_MODEL = /embedding|aqa|image|tts|live|audio|transcribe|nano-banana|omni|robotics|veo|imagen|lyria/i;
+
 function geminiSection() {
   const s = getSettings();
   const keyInput = h('input', {
@@ -72,9 +75,7 @@ function geminiSection() {
       if (!keyInput.value.trim()) return toast('키를 먼저 입력하세요.');
       listBtn.disabled = true;
       try {
-        const names = (await listModels()).filter(
-          (n) => /gemini/i.test(n) && !/embedding|aqa|image|tts|live|audio/i.test(n)
-        );
+        const names = (await listModels()).filter((n) => /gemini/i.test(n) && !NOT_TEXT_MODEL.test(n));
         clear(datalist).append(...names.map((n) => h('option', { value: n })));
         clear(modelsBox).append(
           ...names.slice(0, 30).map((n) =>

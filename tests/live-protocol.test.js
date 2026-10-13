@@ -55,7 +55,7 @@ test('설정 메시지: 음성 답·받아쓰기·말소리 감지·교정 도�
   assert.deepEqual(setup.sessionResumption, {});
   const fn = setup.tools[0].functionDeclarations[0];
   assert.equal(fn.name, 'show_correction');
-  assert.equal(fn.behavior, 'NON_BLOCKING');
+  assert.equal(fn.behavior, undefined); // 3.8은 기본이 비동기, 예비 모델 3.1은 비동기를 지원하지 않는다
   assert.deepEqual(fn.parameters.required, ['original', 'corrected']);
   assert.ok(fn.parameters.properties.explanation_ko);
   const json = JSON.stringify(setup);
@@ -79,7 +79,9 @@ test('보내는 메시지: 첫 요청·마이크 소리·소리 끝·도구 응�
   assert.deepEqual(AUDIO_STREAM_END, { realtimeInput: { audioStreamEnd: true } });
   assert.deepEqual(toolResponse([{ id: 'c1', name: 'show_correction', args: {} }]), {
     toolResponse: {
-      functionResponses: [{ id: 'c1', name: 'show_correction', response: { result: 'shown' }, scheduling: 'SILENT' }],
+      functionResponses: [
+        { id: 'c1', name: 'show_correction', response: { result: 'shown', scheduling: 'SILENT' }, scheduling: 'SILENT' },
+      ],
     },
   });
 });
@@ -128,7 +130,7 @@ test('서버 메시지 → 처리 순서대로 사건', () => {
     { type: 'resumeHandle', handle: 'h2' },
   ]);
   // 지금은 이어 말하기를 할 수 없는 시점: 이전 handle을 그대로 쓴다
-  assert.deepEqual(parseServerMessage({ sessionResumptionUpdate: { resumable: false } }), []);
+  assert.deepEqual(parseServerMessage({ sessionResumptionUpdate: { resumable: false } }), [{ type: 'notResumable' }]);
   assert.deepEqual(parseServerMessage({ goAway: { timeLeft: '9.5s' } }), [{ type: 'goAway', ms: 9500 }]);
   assert.deepEqual(parseServerMessage({ usageMetadata: { totalTokenCount: 5 } }), []);
 });
@@ -142,9 +144,15 @@ test('연결이 닫힌 이유 분류', () => {
   const key = classifyLiveClose(1008, 'API key not valid. Please pass a valid API key.');
   assert.equal(key.kind, 'key');
   assert.equal(key.remember, false); // 키를 고치면 바로 다시 쓸 수 있다
+  // 분당 한도처럼 잠깐인 초과는 그날 기억하지 않고, 일일 한도만 기억한다
   const quota = classifyLiveClose(1011, 'RESOURCE_EXHAUSTED: You exceeded your current quota');
-  assert.deepEqual([quota.kind, quota.remember], ['quota', true]);
+  assert.deepEqual([quota.kind, quota.remember], ['quota', false]);
+  assert.match(quota.message, /잠시 많습니다/);
   assert.equal(classifyLiveClose(1011, 'Error 429 Too Many Requests').kind, 'quota');
+  const daily = classifyLiveClose(1011, 'You exceeded your current quota. Quota exceeded for metric: x, limit: 0');
+  assert.deepEqual([daily.kind, daily.remember], ['quota', true]);
+  assert.match(daily.message, /오늘 Gemini Live 무료 사용 한도를 다 썼습니다/);
+  assert.equal(classifyLiveClose(1011, 'quota exceeded: requests per day').remember, true);
   const model = classifyLiveClose(
     1008,
     'models/gemini-3.8-live is not found for API version v1beta, or is not supported'
@@ -174,7 +182,8 @@ test('닫힌 뒤 할 일: 다음 모델·다시 연결·기본 음성 모드', (
     remember: true,
   });
   // 시작 전에 닫히면 Live를 그만둔다. 인터넷 문제·서버 오류는 그날 기억하지 않는다
-  assert.deepEqual(planAfterClose(c(1011, 'RESOURCE_EXHAUSTED'), first), { action: 'fail', remember: true });
+  assert.deepEqual(planAfterClose(c(1011, 'RESOURCE_EXHAUSTED'), first), { action: 'fail', remember: false });
+  assert.deepEqual(planAfterClose(c(1011, 'RESOURCE_EXHAUSTED limit: 0'), first), { action: 'fail', remember: true });
   assert.deepEqual(planAfterClose(c(1006, ''), first), { action: 'fail', remember: false });
   assert.deepEqual(planAfterClose(c(1011, 'Internal error'), first), { action: 'fail', remember: false });
   assert.deepEqual(planAfterClose(c(1007, 'invalid argument'), first), { action: 'fail', remember: true });
@@ -203,8 +212,9 @@ test('닫힌 뒤 할 일: 다음 모델·다시 연결·기본 음성 모드', (
     action: 'fail',
     remember: false,
   });
-  // 대화 중 한도 초과는 다시 연결해도 소용없다
-  assert.deepEqual(planAfterClose(c(1011, 'quota exceeded'), talking), { action: 'fail', remember: true });
+  // 대화 중 한도 초과는 다시 연결해도 소용없다 (일일 한도일 때만 그날 기억)
+  assert.deepEqual(planAfterClose(c(1011, 'quota exceeded'), talking), { action: 'fail', remember: false });
+  assert.deepEqual(planAfterClose(c(1011, 'quota exceeded per day'), talking), { action: 'fail', remember: true });
 });
 
 test('PCM 변환: 실수↔16비트, 리틀 엔디언 base64 왕복', () => {

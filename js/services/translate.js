@@ -103,6 +103,9 @@ export async function transcribeAndTranslate(audio, sourceLang = 'auto', { signa
       segments: S.arr(S.obj({ source: S.str('Original sentence'), translation: S.str('Translated sentence') })),
     }),
     signal,
+    // 최대 5분 녹음: 듣고 받아쓰는 데 시간이 걸린다 (보내는 시간은 generate가 크기만큼 더 준다)
+    firstChunkMs: 40000,
+    timeoutMs: 120000,
   });
   return { language: result.language || '', segments: Array.isArray(result.segments) ? result.segments : [] };
 }

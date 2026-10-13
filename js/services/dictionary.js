@@ -83,7 +83,7 @@ export async function aiEntry(query, lang, { signal, onPartial, fresh = false } 
           'nuance is one short Korean sentence; tip is one Korean sentence or empty. Korean must be natural Korean.',
         prompt: task,
         schema: ENTRY_SCHEMA,
-        maxOutputTokens: 1200,
+        maxOutputTokens: 2048, // 생각 토큰도 여기에 들어가므로 넉넉히 (잘린 풀이는 보관하지 않음)
         signal,
         onPartial,
       }),
