@@ -23,7 +23,8 @@ export async function startListening({ keepSeconds = 45, onLevel, onEnded, onMut
   const ring = new SampleRing(RATE * keepSeconds);
   let paused = 0;
   const mic = await openMic(SPEAKER_AUDIO, (chunk, inRate) => {
-    if (paused) return onLevel?.(0);
+    // 휴대폰이 스스로 내는 소리(읽기·느리게 듣기, 단어 뜻 창의 발음 등)는 다음 질문에 섞이지 않게 담지 않는다
+    if (paused || globalThis.speechSynthesis?.speaking) return onLevel?.(0);
     const pcm = downsample(chunk, inRate, RATE); // 받자마자 줄여서 보관 (45초 ≈ 2.9MB)
     ring.push(pcm);
     onLevel?.(rms(pcm));

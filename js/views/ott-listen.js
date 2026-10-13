@@ -286,7 +286,8 @@ function closeResult() {
 
 /** 영어 읽기(TTS). 듣는 중이면 읽는 소리는 담지 않는다 */
 function say(text) {
-  listener?.pauseWhile(speak(text));
+  const playing = speak(text);
+  listener?.pauseWhile(playing);
 }
 
 /* ---------- 느리게 다시 듣기 (기기 안에서만 재생, 키·인터넷 불필요) ---------- */

@@ -44,7 +44,7 @@ test('aiEntry: 짧은 스키마로 스트리밍하고, 같은 검색어는 보�
     () => sse(['{"pronunciation":"/rʌn/","entries":[{"english":"run","korean":"달', '리다"}]}']),
   ]);
   const partials = [];
-  const first = await aiEntry('Run', 'en', { onPartial: (p) => partials.push(p) });
+  const first = await aiEntry('run', 'en', { onPartial: (p) => partials.push(p) });
   assert.equal(first.cached, false);
   assert.deepEqual(first.entry.entries, [{ english: 'run', korean: '달리다' }]);
   assert.equal(partials[0].entries[0].korean, '달');
@@ -69,6 +69,10 @@ test('aiEntry: 짧은 스키마로 스트리밍하고, 같은 검색어는 보�
   const fresh = await aiEntry('run', 'en', { fresh: true });
   assert.equal(fresh.cached, false);
   assert.equal(calls.length, 2);
+
+  // 대소문자가 다르면 뜻이 다를 수 있으므로(US/us) 따로 찾는다
+  assert.equal((await aiEntry('Run', 'en')).cached, false);
+  assert.equal(calls.length, 3);
 });
 
 test('aiWordInContext·aiExplainLine: 결과를 그대로 돌려주고 같은 요청은 다시 보내지 않는다', async () => {

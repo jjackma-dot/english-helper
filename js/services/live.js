@@ -184,6 +184,13 @@ export function startLive({ system, duplex = false, on }) {
   }
 
   function connect() {
+    // 옮겨 가기와 다시 연결이 겹쳐도 연결이 둘 남지 않게 한다
+    clearTimeout(timers.reconnect);
+    if (ws) {
+      const old = ws;
+      ws = null;
+      old.close(1000);
+    }
     ready = false;
     generating = false;
     resumable = false;
@@ -232,10 +239,7 @@ export function startLive({ system, duplex = false, on }) {
   function swap() {
     clearTimeout(timers.swap);
     swapPending = false;
-    const old = ws;
-    ws = null;
-    old?.close(1000);
-    connect();
+    connect(); // 옛 연결은 connect가 닫는다
   }
 
   function handleEvent(ev) {
@@ -305,6 +309,8 @@ export function startLive({ system, duplex = false, on }) {
     const setupDone = ready;
     ready = false;
     clearTimeout(timers.setup);
+    clearTimeout(timers.swap); // 이미 끊겼으니 예약해 둔 옮겨 가기는 다시 연결이 대신한다
+    swapPending = false;
     const plan = planAfterClose(c, { setupDone, everReady, modelIdx, reconnects });
     if (plan.action === 'next-model') {
       modelIdx++;

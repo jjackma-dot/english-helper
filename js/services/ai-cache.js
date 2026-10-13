@@ -51,9 +51,10 @@ function tx(db, mode, fn) {
   });
 }
 
-/** 보관함 열쇠: 종류 + 소문자로 정리한 내용 */
+/** 보관함 열쇠: 종류 + 앞뒤·겹친 공백을 정리한 내용 */
 export function cacheKey(kind, ...parts) {
-  return `${kind}:${parts.map((p) => String(p ?? '').trim().replace(/\s+/g, ' ').toLowerCase()).join('|')}`;
+  // 대소문자는 그대로 둔다: US/us, May/may, Polish/polish는 뜻이 다르다
+  return `${kind}:${parts.map((p) => String(p ?? '').trim().replace(/\s+/g, ' ')).join('|')}`;
 }
 
 export async function getCached(key) {

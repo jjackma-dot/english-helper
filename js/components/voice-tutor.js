@@ -217,7 +217,9 @@ export function createVoiceTutor({ getOptions }) {
     paused = v;
     session.setPaused(v);
     keepAwake('tutor', !v);
-    if (!v) {
+    if (v) {
+      turn = {}; // 멈추면 만들던 답이 버려질 수 있으므로, 다시 시작한 말은 새 말풍선에 쓴다
+    } else {
       autoPaused = false;
       clearTimeout(awayTimer);
       notice.hidden = true;
@@ -226,9 +228,13 @@ export function createVoiceTutor({ getOptions }) {
   }
 
   function autoPause() {
-    if (!session || paused) return;
-    setPaused(true);
-    autoPaused = true;
+    if (!session) return;
+    if (!paused) {
+      setPaused(true);
+      autoPaused = true;
+    }
+    // 이미 멈춘 채로 떠나도 오래 비우면 마이크·연결을 닫는다
+    clearTimeout(awayTimer);
     awayTimer = setTimeout(() => finish(), AWAY_MS);
   }
 

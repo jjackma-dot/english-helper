@@ -74,7 +74,7 @@ export async function aiEntry(query, lang, { signal, onPartial, fresh = false } 
       : `The query is English: "${query}". Give its main senses (up to 3) as entries, most common first, ` +
         'with Korean meanings. If it is a phrase or idiom, explain it as one unit.';
   const r = await cached(
-    cacheKey('dict:v2', lang, query),
+    cacheKey('dict:v3', lang, query),
     () =>
       generate({
         system:
@@ -94,7 +94,7 @@ export async function aiEntry(query, lang, { signal, onPartial, fresh = false } 
 
 /** 자막·문장 속 단어 뜻 (문맥 반영). 같은 단어·문장은 보관함에서 꺼낸다 */
 export async function aiWordInContext(word, sentence, { signal } = {}) {
-  const r = await cached(cacheKey('ctx:v1', word, sentence), () =>
+  const r = await cached(cacheKey('ctx:v2', word, sentence), () =>
     generate({
       system: 'You explain English words to Korean learners. Answer in Korean except for English quotes and IPA.',
       prompt:
@@ -116,7 +116,7 @@ export async function aiWordInContext(word, sentence, { signal } = {}) {
 
 /** 드라마·영화 대사 해설 (번역 + 핵심 표현). 같은 대사는 보관함에서 꺼낸다 */
 export async function aiExplainLine(line, { signal, context = '' } = {}) {
-  const r = await cached(cacheKey('line:v1', line), () =>
+  const r = await cached(cacheKey('line:v2', line), () =>
     generate({
       system:
         'You are an English tutor for Korean learners who study with TV shows and movies. ' +
