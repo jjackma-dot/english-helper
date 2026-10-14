@@ -42,12 +42,20 @@ export function tappableEnglish(text, { source = '', tag = 'span', cls = '' } = 
 
 /**
  * @param {string} word
- * @param {{context?: string, source?: string}} [opts] context: 단어가 나온 문장
+ * @param {{context?: string, source?: string, onSpeak?: () => void, onClose?: () => void}} [opts] context: 단어가 나온 문장
+ *   onSpeak: 발음을 읽기 직전 (음성 대화 중이면 대화를 잠시 멈춘다), onClose: 시트를 닫음
  */
-export function openWordSheet(word, { context = '', source = '' } = {}) {
+export function openWordSheet(word, { context = '', source = '', onSpeak, onClose } = {}) {
   const ctrl = new AbortController();
   const body = h('div', { class: 'word-sheet' });
-  openSheet({ title: word, content: body, onClose: () => ctrl.abort() });
+  openSheet({
+    title: word,
+    content: body,
+    onClose: () => {
+      ctrl.abort();
+      onClose?.();
+    },
+  });
 
   let meaningForSave = '';
   let headword = word;
@@ -55,7 +63,14 @@ export function openWordSheet(word, { context = '', source = '' } = {}) {
   const actions = h(
     'div',
     { class: 'row wrap' },
-    btn('발음', () => speak(headword), { ico: 'volume', cls: 'btn' }),
+    btn(
+      '발음',
+      () => {
+        onSpeak?.();
+        speak(headword);
+      },
+      { ico: 'volume', cls: 'btn' }
+    ),
     btn(
       '단어장 저장',
       () => {

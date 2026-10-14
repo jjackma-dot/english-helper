@@ -138,10 +138,13 @@ export function lemmaCandidates(word) {
   return out.slice(0, 4);
 }
 
+// 악센트가 붙은 라틴 글자(café, résumé, naïve)도 한 단어로 본다 (×·÷는 뺀다)
+const ENGLISH_WORD = /[A-Za-zÀ-ÖØ-öø-ɏ]+(?:['’][A-Za-zÀ-ÖØ-öø-ɏ]+)*(?:-[A-Za-zÀ-ÖØ-öø-ɏ]+)*/g;
+
 /** 영어 문장을 단어/비단어 토큰으로 나눈다 (단어 탭 사전에 사용) */
 export function tokenizeEnglish(text) {
   const out = [];
-  const re = /[A-Za-z]+(?:['’][A-Za-z]+)*(?:-[A-Za-z]+)*/g;
+  const re = new RegExp(ENGLISH_WORD);
   let last = 0;
   let m;
   while ((m = re.exec(text))) {
@@ -151,4 +154,22 @@ export function tokenizeEnglish(text) {
   }
   if (last < text.length) out.push({ word: false, text: text.slice(last) });
   return out;
+}
+
+/**
+ * 글의 offset 자리(길게 누른 곳)에 있는 영어 단어. 단어 바로 앞·뒤 경계도 그 단어로 본다.
+ * 단어 안의 '·-는 단어에 넣는다 (don't, well-known). 한글·문장부호 위거나 숫자에 붙은 글자(3pm)면 null
+ * @returns {{word: string, start: number, end: number}|null}
+ */
+export function englishWordAt(text, offset) {
+  const s = String(text || '');
+  const re = new RegExp(ENGLISH_WORD);
+  let m;
+  while ((m = re.exec(s)) && m.index <= offset) {
+    const end = m.index + m[0].length;
+    if (offset > end) continue;
+    if (/\d/.test(s[m.index - 1] || '') || /\d/.test(s[end] || '')) return null;
+    return { word: m[0], start: m.index, end };
+  }
+  return null;
 }

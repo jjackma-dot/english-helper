@@ -3,6 +3,7 @@
 import { DEFAULT_TUTOR_OPTIONS } from './lib/prompts.js';
 import { FAST_MODEL, LEGACY_DEFAULT_MODELS } from './lib/gemini-policy.js';
 import { clearAiCache } from './services/ai-cache.js';
+import { clearSharedPhotos } from './services/photo-file.js';
 
 export const DEFAULT_GEMINI_MODEL = FAST_MODEL;
 
@@ -202,7 +203,7 @@ export function clearAllData() {
       /* 무시 */
     }
   }
-  return Promise.all([clearSubtitles(), clearAiCache()]);
+  return Promise.all([clearSubtitles(), clearAiCache(), clearSharedPhotos()]);
 }
 
 /* ---------- 자막 보관함 (IndexedDB) ---------- */

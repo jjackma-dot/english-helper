@@ -252,7 +252,10 @@ export async function generate(o) {
     if (o.schema) base.generationConfig.responseSchema = o.schema;
   }
   if (o.maxOutputTokens) base.generationConfig.maxOutputTokens = o.maxOutputTokens;
-  const bigBody = JSON.stringify(base).length > BIG_BODY_BYTES;
+  // 큰 요청이면 무엇을 보내는지 ('photo' | 'audio'), 아니면 false
+  const bigBody =
+    JSON.stringify(base).length > BIG_BODY_BYTES &&
+    (base.contents.some((c) => c.parts?.some((p) => p.inlineData?.mimeType?.startsWith('image/'))) ? 'photo' : 'audio');
 
   const preferred = o.model || getSettings().geminiModel || DEFAULT_GEMINI_MODEL;
   const cooldowns = readCooldowns();
@@ -328,7 +331,15 @@ export async function generate(o) {
           break; // 다음 모델
         }
         // 시간 초과·네트워크 오류: 같은 모델로 한 번 더, 그다음 모델.
-        // 긴 녹음처럼 큰 요청은 다시 보내 봐야 같은 이유로 실패하고 데이터만 쓰므로 바로 알린다
+        // 긴 녹음·큰 사진처럼 큰 요청은 다시 보내 봐야 같은 이유로 실패하고 데이터만 쓰므로 바로 알린다
+        if (bigBody === 'photo') {
+          // 시간이 넘은 것은 사진이 커서일 수도, Gemini가 느려서일 수도 있다
+          throw new Error(
+            e instanceof GeminiTimeoutError
+              ? '사진이 크거나 연결이 느려 시간이 오래 걸렸어요. 다시 시도하거나 더 작은 사진으로 해 보세요.'
+              : '사진을 보내지 못했어요. 인터넷 연결을 확인하고 다시 시도해 보세요.'
+          );
+        }
         if (bigBody) {
           throw new Error(
             '보낼 녹음이 커서 Gemini에 보내지 못했습니다. 인터넷 연결을 확인하거나 더 짧게 녹음해 보세요.'

@@ -1,4 +1,4 @@
-// 3) 번역: 텍스트 번역, 실시간 음성 통역(문장 단위), 녹음 후 받아쓰기·번역(Gemini)
+// 3) 번역: 텍스트 번역, 실시간 음성 통역(문장 단위), 녹음 후 받아쓰기·번역(Gemini), 사진 속 글자 번역(Gemini)
 
 import { h, btn, iconBtn, clear, toast, copyWithToast, errorMessage, segmented, toggle, field } from '../ui.js';
 import { icon } from '../icons.js';
@@ -13,7 +13,17 @@ import {
 } from '../store.js';
 import { detectLang } from '../lib/lang.js';
 import { formatClock } from '../lib/timefmt.js';
-import { translate, transcribeAndTranslate } from '../services/translate.js';
+import {
+  blockSides,
+  photoBlocks,
+  photoCopyText,
+  photoHistoryItem,
+  photoLang,
+  photoSourceText,
+  textDirection,
+} from '../lib/photo.js';
+import { translate, transcribeAndTranslate, translateImage } from '../services/translate.js';
+import { prepareImage, takeSharedPhoto } from '../services/photo-file.js';
 import { startRecording, recordingSupported } from '../services/recorder.js';
 import { speak, stopSpeaking, createListener, listenOnce, sttSupported } from '../speech.js';
 import { tappableEnglish } from '../components/word-sheet.js';
@@ -138,13 +148,15 @@ function buildTextPanel() {
                   type: 'button',
                   class: 'history-item',
                   onclick: () => {
-                    setDir(it.from, it.to);
+                    // 사진 번역 기록은 from이 'other'(일본어 등)일 수 있다: 한국어가 아니면 영 → 한으로 다시 번역
+                    const d = textDirection(it.from);
+                    setDir(d.from, d.to);
                     src.value = it.source;
                     run();
                     window.scrollTo({ top: 0, behavior: 'smooth' });
                   },
                 },
-                h('span', { class: 'clip' }, it.source),
+                h('span', { class: 'clip' }, it.photo ? h('span', { class: 'tag' }, '사진') : null, it.source),
                 h('span', { class: 'clip muted' }, it.result)
               )
             )
@@ -176,6 +188,19 @@ function buildTextPanel() {
       )
     : null;
 
+  /**
+   * 사진에서 읽은 글을 고쳐서 다시 번역할 수 있게 넣는다 (고칠 시간을 주려고 바로 번역하지는 않는다).
+   * 방향은 사진 글의 언어(lang)로 정한다: 한국어면 한 → 영, 그 밖(영어·일본어 등)은 영 → 한
+   */
+  function setText(text, lang) {
+    ctrl?.abort();
+    src.value = text;
+    const d = textDirection(lang ?? detectLang(text) ?? dir.from);
+    setDir(d.from, d.to);
+    clear(out).append(h('p', { class: 'hint' }, '잘못 읽은 글자를 고친 뒤 번역하기를 누르세요.'));
+    src.focus();
+  }
+
   src.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) run();
   });
@@ -203,7 +228,7 @@ function buildTextPanel() {
     out,
     historyBox
   );
-  return { el, onDirChange: setPlaceholder };
+  return { el, onDirChange: setPlaceholder, setText, renderHistory };
 }
 
 /* ---------- 실시간 통역 ---------- */
@@ -519,6 +544,426 @@ function buildRecordPanel() {
   };
 }
 
+/* ---------- 사진 번역 ---------- */
+// 카메라로 찍거나 갤러리에서 고른(또는 다른 앱에서 공유받은) 사진의 글자를 Gemini가 읽어 블록마다 번역한다.
+// 사진은 번역할 때만 Gemini로 보내고 앱에 보관하지 않는다.
+
+const PHOTO_SOURCE = '사진 번역';
+const LEFT = 'left'; // 다른 화면으로 가서 멈춘 요청 (abort 이유)
+const SLOW_MS = 10000; // 이만큼 지나도 답이 오지 않으면 느린 인터넷 안내
+
+const list = (v) => (Array.isArray(v) ? v : []);
+
+function loadingLine(msg) {
+  return h('p', { class: 'muted loading' }, h('span', { class: 'spinner' }), msg);
+}
+
+/** 키 없이도 쓸 수 있는 휴대폰 기능 안내 */
+function phoneTips() {
+  return h(
+    'ul',
+    { class: 'hint photo-tips' },
+    h('li', null, h('b', null, '갤럭시 카메라'), ': 글자를 비추면 나오는 T(텍스트) 버튼 → 번역'),
+    h('li', null, h('b', null, '서클 투 서치'), ': 홈 버튼이나 화면 아래 막대를 길게 누르기 → 번역'),
+    h('li', null, '휴대폰·버전에 따라 이름이 다를 수 있어요.')
+  );
+}
+
+/**
+ * @param {{onEdit: (text: string, lang: 'en'|'ko'|'other') => void, onSaved: () => void}} o
+ *   onEdit: 읽은 글자를 텍스트 번역 칸에 넣기 (lang: 사진 글의 언어, 번역 방향을 정한다),
+ *   onSaved: 번역 기록에 넣은 뒤 (기록 목록 새로 그리기)
+ */
+function buildPhotoPanel({ onEdit, onSaved }) {
+  let img = null; // 보낼 사진 (prepareImage 결과). 다시 시도는 이것을 그대로 다시 보낸다
+  let thumbUrl = '';
+  let ctrl = null; // 진행 중인 번역 요청
+  let job = 0; // 사진을 고르거나 닫을 때마다 늘려서, 그사이 늦게 끝난 준비를 버린다
+  let shown = true; // 번역 탭이 보이는 중인지 (다른 탭에 가 있으면 새로 보내지 않는다)
+  const out = h('div', { class: 'stack' });
+
+  const fileInput = (capture) => {
+    const input = h('input', {
+      type: 'file',
+      accept: 'image/*',
+      capture,
+      hidden: true,
+      onchange: () => {
+        const file = input.files?.[0];
+        input.value = ''; // 같은 사진을 다시 골라도 알 수 있게
+        if (file) usePhoto(file);
+      },
+    });
+    return input;
+  };
+  const camInput = fileInput('environment'); // 휴대폰 카메라 앱이 열린다
+  const pickInput = fileInput(null); // 갤러리·파일
+  const openCamera = () => camInput.click();
+  const openGallery = () => pickInput.click();
+
+  const picks = h(
+    'div',
+    { class: 'talk-row' },
+    h(
+      'button',
+      { type: 'button', class: 'talk-btn', onclick: openCamera },
+      icon('camera', { size: 28 }),
+      h('span', null, '카메라로 찍기')
+    ),
+    h(
+      'button',
+      { type: 'button', class: 'talk-btn', onclick: openGallery },
+      icon('image', { size: 28 }),
+      h('span', null, '사진 고르기')
+    )
+  );
+  const noPreview = h('p', { class: 'hint center', hidden: true }, '미리 볼 수 없는 형식이지만 번역은 됩니다.');
+  // 아주 긴 스크롤 캡처는 조각 수에 맞추느라 사진을 줄여 보낸다
+  const smallNote = h(
+    'p',
+    { class: 'hint', hidden: true },
+    '아주 긴 캡처라 사진을 줄여서 보내요. 글자가 작아 잘못 읽는 곳이 있을 수 있으니, 그러면 나눠서 캡처해 보세요.'
+  );
+  const thumb = h('img', {
+    class: 'photo-thumb',
+    alt: '번역할 사진',
+    onerror: () => {
+      // 크롬이 못 여는 HEIF 사진 등 (Gemini에는 원본을 그대로 보낸다)
+      thumb.hidden = true;
+      noPreview.hidden = false;
+    },
+  });
+  const photoCard = h(
+    'div',
+    { class: 'card photo-card', hidden: true },
+    h(
+      'div',
+      { class: 'photo-frame' },
+      thumb,
+      noPreview,
+      iconBtn('x', '사진 닫기', closePhoto, 'icon-btn small photo-close')
+    ),
+    smallNote,
+    h(
+      'div',
+      { class: 'row wrap' },
+      btn('다시 찍기', openCamera, { cls: 'chip', ico: 'camera' }),
+      btn('다른 사진', openGallery, { cls: 'chip', ico: 'image' })
+    )
+  );
+  const keyBox = h(
+    'div',
+    { class: 'callout stack' },
+    h('span', null, '사진 번역은 Gemini API 키가 있어야 합니다. ', h('a', { href: '#/settings' }, '설정에서 키 넣기')),
+    h('span', { class: 'hint' }, '키 없이도 휴대폰 기능으로 사진 속 글자를 번역할 수 있어요.'),
+    phoneTips()
+  );
+  const tips = h('details', null, h('summary', null, '휴대폰 기능으로도 번역할 수 있어요'), phoneTips());
+
+  function renderKey() {
+    const on = geminiEnabled();
+    keyBox.hidden = on;
+    tips.hidden = !on;
+  }
+
+  function showPhoto(p) {
+    if (thumbUrl) URL.revokeObjectURL(thumbUrl);
+    thumbUrl = p ? URL.createObjectURL(p.blob) : '';
+    if (thumbUrl) thumb.setAttribute('src', thumbUrl);
+    else thumb.removeAttribute('src');
+    thumb.hidden = false;
+    noPreview.hidden = true;
+    smallNote.hidden = !p?.small;
+    photoCard.hidden = !p;
+    picks.hidden = Boolean(p);
+  }
+
+  /** 진행 중인 요청을 멈춘다. 먼저 비워서 멈춘 요청이 화면을 다시 그리지 않게 한다 */
+  function stopRequest() {
+    const c = ctrl;
+    ctrl = null;
+    c?.abort();
+  }
+
+  function closePhoto() {
+    job++;
+    stopRequest();
+    img = null;
+    showPhoto(null);
+    clear(out);
+  }
+
+  async function usePhoto(file) {
+    const my = ++job;
+    stopRequest();
+    img = null;
+    clear(out).append(loadingLine('사진을 준비하는 중…'));
+    let p;
+    try {
+      p = await prepareImage(file);
+    } catch (e) {
+      if (my !== job) return;
+      showPhoto(null);
+      clear(out).append(h('p', { class: 'error-text' }, errorMessage(e)));
+      return;
+    }
+    if (my !== job) return; // 그사이 다른 사진을 골랐거나 닫았다
+    img = p;
+    showPhoto(p);
+    if (shown) run();
+    else stopped();
+  }
+
+  /** 다른 앱에서 공유받은 사진을 꺼내 번역한다 */
+  async function takeShared() {
+    const my = ++job;
+    stopRequest();
+    clear(out).append(loadingLine('공유받은 사진을 여는 중…'));
+    let file = null;
+    try {
+      file = await takeSharedPhoto();
+    } catch {
+      file = null;
+    }
+    if (my !== job) return;
+    if (file) usePhoto(file);
+    else clear(out).append(h('p', { class: 'error-text' }, '공유받은 사진을 찾지 못했습니다. 다시 공유해 주세요.'));
+  }
+
+  function stopped() {
+    clear(out).append(
+      h('p', { class: 'hint' }, '다른 화면으로 가서 멈췄어요.'),
+      btn('다시 시도', run, { cls: 'chip', ico: 'back' })
+    );
+  }
+
+  async function run() {
+    if (!img) return;
+    if (!geminiEnabled()) {
+      clear(out).append(
+        h(
+          'p',
+          { class: 'error-text' },
+          '사진 번역은 Gemini API 키가 있어야 합니다. ',
+          h('a', { href: '#/settings' }, '설정에서 키 넣기')
+        ),
+        btn('번역하기', run, { cls: 'chip', ico: 'globe' })
+      );
+      return;
+    }
+    stopRequest();
+    const c = new AbortController();
+    ctrl = c;
+    const image = img;
+    let frame = 0;
+    let latest = {};
+    let got = false;
+    let wait = '사진 속 글자를 읽고 번역하는 중…';
+    const draw = (r, done) => ctrl === c && clear(out).append(...photoResult(r, done, wait));
+    // 사진이 크고 인터넷이 느리면 보내는 데만 한참 걸린다
+    const slow = setTimeout(() => {
+      if (got) return;
+      wait = '사진을 보내는 중이에요. 인터넷이 느리면 조금 더 걸려요.';
+      draw(latest, false);
+    }, SLOW_MS);
+    draw(latest, false);
+    try {
+      const r = await translateImage(image, {
+        signal: c.signal,
+        onPartial: (p) => {
+          got = true;
+          latest = p;
+          // 조각이 자주 와도 화면은 프레임마다 한 번만 다시 그린다
+          frame ||= requestAnimationFrame(() => {
+            frame = 0;
+            draw(latest, false);
+          });
+        },
+      });
+      cancelAnimationFrame(frame);
+      if (ctrl !== c) return;
+      draw(r, true);
+      const item = photoHistoryItem(r);
+      if (item) {
+        pushTranslateHistory(item);
+        onSaved();
+      }
+    } catch (e) {
+      cancelAnimationFrame(frame);
+      if (ctrl !== c) return; // 닫았거나 다른 사진으로 바뀌었다
+      if (c.signal.reason === LEFT) stopped();
+      else if (e.name !== 'AbortError') {
+        clear(out).append(
+          h('p', { class: 'error-text' }, errorMessage(e)),
+          btn('다시 시도', run, { cls: 'chip', ico: 'back' })
+        );
+      }
+    } finally {
+      clearTimeout(slow);
+      if (ctrl === c) ctrl = null;
+    }
+  }
+
+  function photoResult(r, done, wait) {
+    const blocks = photoBlocks(r);
+    const phrases = list(r.phrases).filter((p) => p?.phrase);
+    return [
+      r.paraphrased
+        ? h('p', { class: 'hint' }, '저작권 보호 때문에 원문을 그대로 옮기지 않고 줄여서 보여 드려요.')
+        : null,
+      r.noteKo ? h('p', { class: 'photo-note' }, r.noteKo) : null,
+      blocks.length
+        ? h(
+            'ol',
+            { class: 'live-list' },
+            blocks.map((b, i) => blockView(b, done || i < blocks.length - 1, r.paraphrased))
+          )
+        : null,
+      done && !blocks.length && !r.noteKo
+        ? h('p', { class: 'muted' }, '사진에서 읽을 수 있는 글자를 찾지 못했어요.')
+        : null,
+      phrases.length ? phraseList(phrases, done) : null,
+      done ? null : loadingLine(blocks.length ? '이어서 받는 중…' : wait),
+      done && blocks.some((b) => englishParts(b, r.paraphrased).some(Boolean))
+        ? h('p', { class: 'hint' }, '영어 단어를 누르면 뜻을 볼 수 있습니다.')
+        : null,
+      done && blocks.length
+        ? h(
+            'div',
+            { class: 'row wrap' },
+            btn('전체 복사', () => copyWithToast(photoCopyText(r)), { cls: 'btn small ghost', ico: 'copy' }),
+            // 요약만 받았으면 고칠 원문이 없다
+            r.paraphrased
+              ? null
+              : btn('글자 고쳐서 다시 번역', () => onEdit(photoSourceText(r), photoLang(r)), {
+                  cls: 'btn small ghost',
+                  ico: 'edit',
+                })
+          )
+        : null,
+    ].filter(Boolean);
+  }
+
+  /**
+   * 블록에서 영어 단어를 누를 수 있게 보여 줄 곳: [원문, 번역]. 원문이 영어면 원문, 한국어면 번역(영어).
+   * 저작권 때문에 요약만 받았으면(paraphrased) 원문 자리는 짧은 이름표라 그냥 글자로 보여 준다
+   */
+  function englishParts(b, paraphrased) {
+    const { from } = blockSides(b);
+    return [from === 'en' && !paraphrased, from === 'ko' && Boolean(String(b.translation || '').trim())];
+  }
+
+  /**
+   * 블록 하나: 원문(영어는 단어를 누를 수 있게)과 번역. 다 받은 블록에만 버튼을 단다.
+   * 읽기·단어장 저장은 영어 쪽이 있을 때만 (일본어 등 다른 언어는 한국어 번역만 있다), 요약만 받았으면 복사만
+   */
+  function blockView(b, complete, paraphrased) {
+    const text = String(b.text || '').trim();
+    const tr = String(b.translation || '').trim();
+    const side = blockSides(b);
+    const [tapSrc, tapTr] = englishParts(b, paraphrased);
+    const english = (s, cls) => tappableEnglish(s, { source: PHOTO_SOURCE, tag: 'div', cls });
+    const en = paraphrased ? '' : side.en;
+    return h(
+      'li',
+      { class: `live-item photo-block from-${side.from === 'ko' ? 'ko' : 'en'}` },
+      tapSrc
+        ? english(text, 'photo-src')
+        : h('div', { class: 'photo-src', lang: side.from === 'other' ? null : side.from }, text),
+      tr ? (tapTr ? english(tr, 'photo-tr') : h('div', { class: 'photo-tr', lang: 'ko' }, tr)) : null,
+      complete
+        ? h(
+            'div',
+            { class: 'row wrap line-actions' },
+            en ? btn('읽기', () => speak(en), { cls: 'chip small', ico: 'volume' }) : null,
+            btn('복사', () => copyWithToast([text, tr].filter(Boolean).join('\n')), { cls: 'chip small', ico: 'copy' }),
+            en
+              ? btn(
+                  '단어장 저장',
+                  () => {
+                    addWord({ text: side.en, meaning: side.ko, type: 'sentence', source: PHOTO_SOURCE });
+                    toast('단어장에 저장했습니다');
+                  },
+                  { cls: 'chip small', ico: 'star' }
+                )
+              : null
+          )
+        : null
+    );
+  }
+
+  function phraseList(phrases, done) {
+    return h(
+      'div',
+      { class: 'stack tight' },
+      h('b', { class: 'small' }, '알아 두면 좋은 표현'),
+      h(
+        'ul',
+        { class: 'photo-phrases' },
+        phrases.map((p, i) => {
+          const complete = done || i < phrases.length - 1;
+          return h(
+            'li',
+            null,
+            h(
+              'div',
+              { class: 'grow' },
+              h('b', { lang: 'en' }, p.phrase),
+              p.meaningKo ? ` — ${p.meaningKo}` : null,
+              p.noteKo ? h('div', { class: 'muted small' }, p.noteKo) : null
+            ),
+            complete ? iconBtn('volume', '읽기', () => speak(p.phrase), 'icon-btn small') : null,
+            complete
+              ? btn(
+                  '저장',
+                  () => {
+                    addWord({ text: p.phrase, meaning: p.meaningKo, source: PHOTO_SOURCE });
+                    toast(`'${p.phrase}' 저장했습니다`);
+                  },
+                  { cls: 'chip small', ico: 'star' }
+                )
+              : null
+          );
+        })
+      )
+    );
+  }
+
+  window.addEventListener('settings-changed', renderKey);
+  renderKey();
+
+  const el = h(
+    'div',
+    { class: 'stack' },
+    h(
+      'p',
+      { class: 'hint' },
+      '메뉴판·안내문·책·화면 캡처처럼 사진 속 글자를 읽어 번역합니다 (영어 → 한국어, 한국어 → 영어). ',
+      '갤러리에서 공유 → English Helper로 보내도 됩니다.'
+    ),
+    keyBox,
+    picks,
+    photoCard,
+    out,
+    h('p', { class: 'hint' }, '사진은 번역할 때만 Google Gemini로 보내고, 앱에는 보관하지 않습니다.'),
+    tips,
+    camInput,
+    pickInput
+  );
+  return {
+    el,
+    takeShared,
+    /** 다른 탭으로 갈 때: 진행 중인 번역을 멈춘다 (돌아와서 다시 시도) */
+    leave: () => {
+      shown = false;
+      ctrl?.abort(LEFT);
+    },
+    back: () => {
+      shown = true;
+    },
+  };
+}
+
 /* ---------- 화면 ---------- */
 
 function setDir(from, to) {
@@ -530,17 +975,26 @@ function setDir(from, to) {
 export function init(root) {
   dirLabel = h('div', { class: 'dir-label' });
   panels = { text: buildTextPanel(), live: buildLivePanel(), record: buildRecordPanel() };
+  panels.photo = buildPhotoPanel({
+    onEdit: (text, lang) => {
+      showMode('text');
+      panels.text.setText(text, lang);
+    },
+    onSaved: () => panels.text.renderHistory(),
+  });
   panelBox = h('div');
   modeSeg = segmented(
     [
       { value: 'text', label: '텍스트' },
       { value: 'live', label: '실시간 통역' },
-      { value: 'record', label: '녹음 번역' },
+      { value: 'record', label: '녹음' },
+      { value: 'photo', label: '사진' },
     ],
     mode,
     showMode,
     { label: '번역 방식' }
   );
+  modeSeg.classList.add('modes'); // 4개가 좁은 화면에서도 한 줄에 들어가게 글자 길이만큼 나눈다
   root.append(
     h(
       'div',
@@ -556,6 +1010,14 @@ export function init(root) {
 }
 
 export function show(params) {
+  panels.photo.back();
+  if (params.get('photo') === 'shared') {
+    // 다른 앱에서 공유한 사진 (sw.js가 받아 둠). 새로 고침해도 다시 꺼내지 않게 주소에서 지운다
+    history.replaceState(null, '', `${location.pathname}#/translate`);
+    showMode('photo');
+    panels.photo.takeShared();
+    return;
+  }
   const text = params.get('text');
   if (text) {
     if (mode !== 'text') showMode('text');
@@ -565,8 +1027,9 @@ export function show(params) {
   }
 }
 
-/** 다른 탭으로 가면 마이크를 끈다 */
+/** 다른 탭으로 가면 마이크를 끄고 사진 번역 요청을 멈춘다 */
 export function hide() {
   panels?.live.stop();
   panels?.record.stop();
+  panels?.photo.leave();
 }

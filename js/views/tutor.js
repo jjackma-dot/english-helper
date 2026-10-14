@@ -196,10 +196,11 @@ export function init(root) {
         '교정·정리는 한국어로, 대화는 영어로'
       )
     ),
-    h('h2', { class: 'group-title' }, '다른 앱으로 연습 (ChatGPT·Gemini 앱)'),
+    // 앱 안 음성 대화가 주 기능이라 다른 앱으로 연습하는 방법은 접어 둔다 (누르면 펼쳐짐)
     h(
-      'section',
+      'details',
       { class: 'card' },
+      h('summary', null, icon('external'), ' 다른 앱으로 연습 (ChatGPT·Gemini 앱)'),
       h('div', { class: 'row between' }, h('h3', { class: 'card-title' }, icon('file'), '튜터 요청문'), regenBtn),
       field(
         'AI 앱',
@@ -226,25 +227,7 @@ export function init(root) {
           : null,
         openBtn,
         btn('복사만 하기', () => copyWithToast(promptBox.value), { cls: 'btn ghost', ico: 'copy' })
-      )
-    ),
-    h(
-      'section',
-      { class: 'card' },
-      h('h3', { class: 'card-title' }, icon('mic'), '앱의 음성 모드로 바로 말하기'),
-      h('p', { class: 'hint' }, 'Gemini Live는 요청문을 받을 수 없습니다. 열리면 먼저 이 문장을 소리 내어 말하세요.'),
-      openerText,
-      h('div', { class: 'stack actions' }, btn('Gemini Live 열기', openGeminiLive, { cls: 'btn', ico: 'external' })),
-      h(
-        'p',
-        { class: 'hint' },
-        h('b', null, 'ChatGPT 음성'),
-        ': 휴대폰 설정에서 기본 디지털 어시스턴트 앱을 ChatGPT로 바꿔 두면(한 번만), 전원(측면) 버튼을 길게 눌러 바로 음성 대화를 열 수 있습니다. 열리면 위 문장으로 시작하세요.'
-      )
-    ),
-    h(
-      'section',
-      { class: 'card' },
+      ),
       h('h3', { class: 'card-title' }, icon('chat'), '대화 중에 쓰는 요청'),
       h('p', { class: 'hint' }, '누르면 복사됩니다. AI 앱 대화창에 붙여넣으세요.'),
       h(
@@ -261,6 +244,20 @@ export function init(root) {
     ),
     h(
       'details',
+      { class: 'card' },
+      h('summary', null, icon('mic'), ' 앱의 음성 모드로 바로 말하기'),
+      h('p', { class: 'hint' }, 'Gemini Live는 요청문을 받을 수 없습니다. 열리면 먼저 이 문장을 소리 내어 말하세요.'),
+      openerText,
+      h('div', { class: 'stack actions' }, btn('Gemini Live 열기', openGeminiLive, { cls: 'btn', ico: 'external' })),
+      h(
+        'p',
+        { class: 'hint' },
+        h('b', null, 'ChatGPT 음성'),
+        ': 휴대폰 설정에서 기본 디지털 어시스턴트 앱을 ChatGPT로 바꿔 두면(한 번만), 전원(측면) 버튼을 길게 눌러 바로 음성 대화를 열 수 있습니다. 열리면 위 문장으로 시작하세요.'
+      )
+    ),
+    h(
+      'details',
       { class: 'card tips' },
       h('summary', null, icon('info'), ' 사용 방법'),
       h(
@@ -270,7 +267,7 @@ export function init(root) {
           'li',
           null,
           h('b', null, '음성으로 바로 대화 시작'),
-          '을 누르면 마이크 허용 → 연결 → 튜터의 첫인사까지 자동으로 이어집니다. 튜터가 말을 마치면 그냥 말하면 되고, 틀린 표현은 교정 카드로 보여 줍니다.'
+          '을 누르면 마이크 허용 → 연결 → 튜터의 첫인사까지 자동으로 이어집니다. 튜터가 말을 마치면 그냥 말하면 되고, 틀린 표현은 교정 카드로 보여 줍니다. 대화에 나온 영어 단어는 길게 누르면 뜻이 나옵니다.'
         ),
         h(
           'li',

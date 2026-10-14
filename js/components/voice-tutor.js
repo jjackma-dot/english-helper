@@ -1,15 +1,18 @@
 // AI 회화 탭의 앱 안 음성 튜터: 버튼 한 번이면 마이크 → Gemini Live 연결 → 튜터가 먼저 말을 건다.
 // Live를 쓸 수 없으면 기본 음성 모드(음성 인식 + Gemini 글 답변 + 기기 음성)로 저절로 바꿔 이어 간다.
 // 대화 중에는 카드가 머리글과 아래 탭 사이에 꼭 맞게 바뀌어 상태·대화·버튼이 모두 보이고, 대화 내용만 스크롤된다.
+// 대화 중이든 끝난 뒤든 대화 내용의 영어 단어를 길게 누르면 단어 뜻 시트가 열린다.
 
 import { h, btn, toast, toggle } from '../ui.js';
 import { icon } from '../icons.js';
 import { getSettings, updateSettings, addWord } from '../store.js';
 import { buildVoiceTutorSystem } from '../lib/prompts.js';
+import { englishWordAt } from '../lib/lang.js';
 import { apiKey } from '../services/gemini.js';
 import { liveBlocked, liveSupported, startLive } from '../services/live.js';
 import { fallbackSupported, startFallback } from '../services/voice-fallback.js';
 import { keepAwake } from '../services/wake-lock.js';
+import { openWordSheet, tappableEnglish } from './word-sheet.js';
 
 const STATUS = {
   connecting: '연결 중…',
@@ -23,6 +26,10 @@ const AWAY_MS = 3 * 60 * 1000; // 다른 앱으로 가거나 화면을 끈 채 �
 const LATE_TEXT_MS = 1500; // 차례가 끝난 뒤 이만큼 안에 온 받아쓰기는 끝난 차례의 말풍선에 붙인다 (순서가 어긋나 올 수 있음)
 const FOLLOW_PX = 48; // 대화 내용이 맨 아래에서 이만큼 안이면 새 말을 따라 내려간다 (위로 올려 읽는 중이면 그대로 둔다)
 const BASIC_NOTE = '기본 음성 모드(음성 인식 + 기기 음성)로 대화합니다.';
+const HOLD_MS = 450; // 이만큼 누르고 있으면 단어 뜻을 연다
+const HOLD_MOVE_PX = 10; // 누른 채 이만큼 넘게 움직이면 스크롤하는 것으로 본다
+const WORD_NEAR_PX = 12; // 누른 곳이 단어에서 이만큼 안이면 그 단어로 본다 (손가락 끝이 조금 빗나가도)
+const WORD_TEXT = '.bubble, .fix-orig, .fix-new'; // 길게 눌러 단어를 찾는 글
 
 /**
  * @param {{getOptions: () => object|null}} o getOptions: 지금 튜터 옵션(+words). 시작할 수 없으면 null
@@ -39,6 +46,7 @@ export function createVoiceTutor({ getOptions }) {
   let interimEl = null;
   let level = -1;
   let follow = true; // 대화 내용을 맨 아래에 붙여 새 말을 따라간다
+  let holding = false; // 대화 내용을 손가락으로 누르는 중: 누른 단어가 밀려나지 않게 새 말을 따라 내려가지 않는다
 
   const startLabel = h('span', null, '음성으로 바로 대화 시작');
   const startBtn = h(
@@ -64,10 +72,12 @@ export function createVoiceTutor({ getOptions }) {
       '설정에서 무료 키 넣기'
     )
   );
+  const holdTip = h('span', null, ' 대화 중에도 영어 단어를 길게 누르면 뜻이 나옵니다.');
   const introHint = h(
     'p',
     { class: 'hint' },
-    '한 번 누르면 마이크를 켜고 AI 튜터가 먼저 영어로 말을 겁니다. 아래 대화 설정(상황·수준·교정)이 그대로 쓰입니다.'
+    '한 번 누르면 마이크를 켜고 AI 튜터가 먼저 영어로 말을 겁니다. 아래 대화 설정(상황·수준·교정)이 그대로 쓰입니다.',
+    holdTip
   );
   const statusText = h('span');
   const engineBadge = h('span', { class: 'badge' });
@@ -81,7 +91,30 @@ export function createVoiceTutor({ getOptions }) {
     onscroll: () => (follow = log.scrollHeight - log.scrollTop - log.clientHeight <= FOLLOW_PX),
   });
   // 안내 문구가 나타나거나 화면을 돌려 대화 칸이 작아져도 맨 아래(새 말)를 계속 보여 준다
-  if (window.ResizeObserver) new ResizeObserver(() => follow && (log.scrollTop = log.scrollHeight)).observe(log);
+  if (window.ResizeObserver) new ResizeObserver(toBottom).observe(log);
+  holdForWord(log, {
+    selector: WORD_TEXT,
+    onWord: (word, context) => {
+      // 뜻을 보는 동안 대화는 그대로 두되, 발음을 읽으면(기기 음성) 그 소리가 튜터 목소리를 끊거나 내 말로 들어가지
+      // 않게 대화를 잠시 멈추고, 시트를 닫으면 이어 간다
+      let pausedHere = false;
+      openWordSheet(word, {
+        context,
+        source: 'AI 회화',
+        onSpeak: () => {
+          if (!session || paused) return;
+          setPaused(true);
+          pausedHere = true;
+        },
+        onClose: () => pausedHere && session && paused && setPaused(false),
+      });
+    },
+    onHold: (on, still) => {
+      holding = on;
+      if (still) toBottom(); // 누르는 동안 온 새 말로 내려간다 (스크롤하다 끝났으면 손가락이 정한 자리를 따른다)
+    },
+  });
+  const logHint = h('p', { class: 'hint' }, icon('info', { size: 14 }), ' 영어 단어를 누르면 뜻이 나옵니다.');
   const cutBtn = btn('말 끊기', interrupt, { cls: 'btn primary', ico: 'volumeX' });
   const pauseBtn = h('button', { class: 'btn', type: 'button', onclick: () => setPaused(!paused) });
   const controls = h(
@@ -119,6 +152,7 @@ export function createVoiceTutor({ getOptions }) {
     statusRow,
     levelBox,
     log,
+    logHint,
     controls,
     bargeToggle,
     privacyHint
@@ -141,6 +175,8 @@ export function createVoiceTutor({ getOptions }) {
     controls.hidden = !running;
     levelBox.hidden = !running || engine !== 'live';
     log.hidden = !running && !log.childElementCount; // 대화 중에는 비어 있어도 자리를 지켜 버튼이 아래에 머문다
+    logHint.hidden = running || !log.childElementCount;
+    holdTip.hidden = !logHint.hidden; // 대화가 끝나 대화 내용 아래에 알릴 때는 위에서 또 말하지 않는다
     startLabel.textContent = log.childElementCount ? '새 대화 시작' : '음성으로 바로 대화 시작';
     cutBtn.disabled = !tutorTalking();
     pauseBtn.replaceChildren(icon(paused ? 'play' : 'pause'), h('span', null, paused ? '이어서 대화' : '일시정지'));
@@ -170,6 +206,7 @@ export function createVoiceTutor({ getOptions }) {
       begin('basic', options);
     } else {
       showNotice('이 브라우저에서는 음성 대화를 할 수 없습니다. 안드로이드 크롬을 사용하세요.', true);
+      render();
       return;
     }
     keepAwake('tutor', true); // 대화 중에는 화면이 꺼지지 않게
@@ -239,7 +276,21 @@ export function createVoiceTutor({ getOptions }) {
     showInterim('');
     paused = autoPaused = false;
     if (message) showNotice(message, true);
+    if (s) makeWordsTappable();
     render();
+  }
+
+  /**
+   * 대화가 끝나면 글이 더 바뀌지 않으므로 영어 단어를 눌러서도 뜻을 볼 수 있게 바꾼다 (화면 읽기·키보드로도 찾을 수 있게).
+   * 줄 그은 원래 문장(.fix-orig)은 줄이 사라지지 않게 그대로 둔다 (길게 누르기는 된다)
+   */
+  function makeWordsTappable() {
+    for (const el of log.querySelectorAll('.bubble:not(.interim), .fix-new')) {
+      const text = el.textContent;
+      if (/[A-Za-z]/.test(text) && !el.querySelector('.tappable')) {
+        el.replaceChildren(tappableEnglish(text, { source: 'AI 회화' }));
+      }
+    }
   }
 
   /** "말 끊기" 버튼: 튜터 말을 바로 멈추고 내 차례로 */
@@ -286,7 +337,11 @@ export function createVoiceTutor({ getOptions }) {
   /** 새 말을 보여 준다. 위로 올려 지난 말을 읽는 중이면 끌어내리지 않는다 */
   function reveal() {
     log.hidden = false;
-    if (follow) log.scrollTop = log.scrollHeight;
+    toBottom();
+  }
+
+  function toBottom() {
+    if (follow && !holding) log.scrollTop = log.scrollHeight;
   }
 
   function addText(role, text) {
@@ -369,4 +424,80 @@ export function createVoiceTutor({ getOptions }) {
   render();
 
   return { el, stop: () => finish() };
+}
+
+/**
+ * box 안 글(selector)의 영어 단어를 길게 누르면 onWord(단어, 그 단어가 든 글 전체)를 부른다. 한글·빈 곳이면 그냥 둔다.
+ * 말풍선 글은 받아쓰기가 오는 대로 바뀌므로 단어마다 버튼을 만들지 않고, 누른 자리의 글자를 찾는다.
+ * @param {HTMLElement} box 스크롤되는 대화 칸
+ * @param {{selector: string, onWord: (word: string, context: string) => void, onHold?: (on: boolean, still?: boolean) => void}} o
+ *   onHold: 누르기 시작·끝. still: 손가락을 움직이지 않고 끝남 (뗐거나 뜻을 엶). 스크롤하다 끝나면 false
+ */
+export function holdForWord(box, { selector, onWord, onHold }) {
+  let press = null; // 누르는 중 {id, x, y, top: 그때 스크롤 위치, timer}
+  let opened = false; // 이번 누르기로 뜻을 열었음
+
+  function end(still = false) {
+    if (!press) return;
+    clearTimeout(press.timer);
+    press = null;
+    onHold?.(false, still);
+  }
+
+  function open(x, y, first) {
+    const hit = wordAtPoint(box, selector, x, y); // 먼저 찾는다: 누르기가 끝나면 그동안 온 새 말로 내려가 글이 움직인다
+    end(true);
+    // 누르는 동안 위쪽에 글(늦게 온 받아쓰기·교정 카드)이 끼어 손가락 밑 단어가 바뀌었으면 열지 않는다
+    if (!hit || !first || hit.el !== first.el || hit.start !== first.start) return;
+    opened = true;
+    navigator.vibrate?.(10);
+    onWord(hit.word, hit.context);
+  }
+
+  box.addEventListener('pointerdown', (e) => {
+    end();
+    opened = false;
+    if (!e.isPrimary || e.button !== 0) return; // 오른쪽 버튼·두 번째 손가락은 길게 누르기가 아니다
+    const p = { id: e.pointerId, x: e.clientX, y: e.clientY, top: box.scrollTop };
+    p.first = wordAtPoint(box, selector, p.x, p.y); // 누른 순간 손가락 밑 단어
+    p.timer = setTimeout(() => open(p.x, p.y, p.first), HOLD_MS);
+    press = p;
+    onHold?.(true);
+  });
+  box.addEventListener('pointermove', (e) => {
+    if (press?.id === e.pointerId && Math.hypot(e.clientX - press.x, e.clientY - press.y) > HOLD_MOVE_PX) end();
+  });
+  box.addEventListener('pointerup', () => end(true));
+  // 손가락으로 스크롤하기 시작하면 브라우저가 pointercancel을 보낸다
+  for (const type of ['pointercancel', 'pointerleave']) box.addEventListener(type, () => end());
+  // 글이 손가락 밑에서 움직였으면 그만둔다 (누르기 직전에 새 말을 따라 내려간 스크롤 알림은 늦게 와도 무시)
+  box.addEventListener('scroll', () => press && Math.abs(box.scrollTop - press.top) > HOLD_MOVE_PX && end());
+  // 휴대폰은 길게 누르면 contextmenu를 보낸다: 메뉴·글자 선택은 막고, 타이머보다 먼저 오면 바로 뜻을 연다
+  box.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    if (press) open(press.x, press.y, press.first);
+  });
+  // 뜻을 연 뒤 손을 떼면 따라오는 탭(click)이 막 열린 시트의 배경을 눌러 닫지 않게
+  box.addEventListener('touchend', (e) => opened && e.cancelable && e.preventDefault(), { passive: false });
+}
+
+/** 화면 (x, y)의 영어 단어와 그 단어가 든 글(box 안 selector) 전체. 한글·문장부호·빈 곳이면 null */
+function wordAtPoint(box, selector, x, y) {
+  const pos = document.caretPositionFromPoint?.(x, y);
+  const caret = pos ? null : document.caretRangeFromPoint?.(x, y); // 크롬 127 이하
+  const node = pos ? pos.offsetNode : caret?.startContainer;
+  const offset = pos ? pos.offset : caret?.startOffset;
+  if (node?.nodeType !== Node.TEXT_NODE) return null;
+  const el = node.parentElement?.closest(selector);
+  if (!el || !box.contains(el)) return null;
+  const hit = englishWordAt(node.data, offset);
+  if (!hit) return null;
+  // 글자 자리는 가장 가까운 곳으로 잡히므로, 말풍선 옆 빈 곳을 누르면 단어를 고르지 않게 단어가 정말 손가락 밑에 있는지 본다
+  const range = document.createRange();
+  range.setStart(node, hit.start);
+  range.setEnd(node, hit.end);
+  const near = (r) =>
+    x > r.left - WORD_NEAR_PX && x < r.right + WORD_NEAR_PX && y > r.top - WORD_NEAR_PX && y < r.bottom + WORD_NEAR_PX;
+  if (![...range.getClientRects()].some(near)) return null;
+  return { word: hit.word, context: el.textContent.trim(), el, start: hit.start };
 }

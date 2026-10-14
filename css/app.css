@@ -1459,6 +1459,10 @@ audio {
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 2px;
+  /* 영어 단어를 길게 누르면 뜻이 열리므로 글자 선택·휴대폰 길게 누르기 메뉴가 끼어들지 않게 */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 }
 .bubble {
   max-width: 85%;
@@ -1524,12 +1528,6 @@ audio {
   min-height: 56px;
   padding: 4px 6px;
   font-size: 0.9rem;
-}
-.group-title {
-  margin: 8px 2px 0;
-  font-size: 1rem;
-  font-weight: 800;
-  color: var(--muted);
 }
 
 /* ==== OTT 방금 뭐라고 ==== */
@@ -1609,4 +1607,77 @@ ul.listen-about {
     flex-direction: row;
     min-height: 56px;
   }
+}
+
+/* ==== 사진 번역 (번역 탭 "사진") ==== */
+
+/* 번역 방식 4개: 칸을 글자 길이만큼 나눠 360px 화면에서도 한 줄에 들어가게 */
+.segmented.modes button {
+  flex: 1 1 auto;
+  line-height: 1.2;
+}
+.photo-card {
+  padding: 10px;
+  gap: 10px;
+}
+/* 사진은 잘리지 않게 다 보여 주고(object-fit: contain), 화면의 40%까지만 차지한다 */
+.photo-frame {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 120px;
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.photo-thumb {
+  display: block;
+  max-width: 100%;
+  max-height: 40vh;
+  object-fit: contain;
+}
+.photo-frame > .hint {
+  padding: 24px 48px;
+}
+.photo-close {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  background: color-mix(in srgb, var(--surface) 85%, transparent);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+.photo-note {
+  font-weight: 700;
+}
+/* 블록 하나: 원문 아래에 번역 (사진 속 줄바꿈을 그대로) */
+.photo-src,
+.photo-tr {
+  white-space: pre-wrap;
+  line-height: 1.55;
+}
+.photo-src {
+  font-size: 1.05rem;
+}
+.photo-tr {
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+}
+.photo-phrases {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.photo-phrases li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+ul.photo-tips {
+  margin: 4px 0 0;
+  padding-left: 18px;
 }
