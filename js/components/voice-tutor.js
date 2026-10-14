@@ -1,5 +1,6 @@
 // AI 회화 탭의 앱 안 음성 튜터: 버튼 한 번이면 마이크 → Gemini Live 연결 → 튜터가 먼저 말을 건다.
 // Live를 쓸 수 없으면 기본 음성 모드(음성 인식 + Gemini 글 답변 + 기기 음성)로 저절로 바꿔 이어 간다.
+// 대화 중에는 카드가 머리글과 아래 탭 사이에 꼭 맞게 바뀌어 상태·대화·버튼이 모두 보이고, 대화 내용만 스크롤된다.
 
 import { h, btn, toast, toggle } from '../ui.js';
 import { icon } from '../icons.js';
@@ -20,6 +21,7 @@ const STATUS = {
 };
 const AWAY_MS = 3 * 60 * 1000; // 다른 앱으로 가거나 화면을 끈 채 이만큼 지나면 대화를 끝낸다 (마이크·연결 정리)
 const LATE_TEXT_MS = 1500; // 차례가 끝난 뒤 이만큼 안에 온 받아쓰기는 끝난 차례의 말풍선에 붙인다 (순서가 어긋나 올 수 있음)
+const FOLLOW_PX = 48; // 대화 내용이 맨 아래에서 이만큼 안이면 새 말을 따라 내려간다 (위로 올려 읽는 중이면 그대로 둔다)
 const BASIC_NOTE = '기본 음성 모드(음성 인식 + 기기 음성)로 대화합니다.';
 
 /**
@@ -27,15 +29,16 @@ const BASIC_NOTE = '기본 음성 모드(음성 인식 + 기기 음성)로 대�
  * @returns {{el: HTMLElement, stop: () => void}} stop: 진행 중인 대화를 끝낸다 (다른 탭으로 갈 때)
  */
 export function createVoiceTutor({ getOptions }) {
-  let session = null; // 진행 중인 대화 {stop, setPaused, setDuplex?}
+  let session = null; // 진행 중인 대화 {stop, setPaused, interrupt, setBargeIn?}
   let engine = '';
   let status = '';
   let paused = false;
   let autoPaused = false; // 다른 앱으로 가거나 화면이 꺼져 저절로 멈춤
   let awayTimer = 0;
-  let turn = {}; // 지금 차례의 말풍선·교정 카드 {me, tutor, fix, endedAt}
+  let turn = {}; // 지금 차례의 말풍선·교정 카드 {me, tutor, fix, endedAt, cut}. cut: 튜터 말을 끊음 (다음 답까지 튜터 글은 버림)
   let interimEl = null;
   let level = -1;
+  let follow = true; // 대화 내용을 맨 아래에 붙여 새 말을 따라간다
 
   const startLabel = h('span', null, '음성으로 바로 대화 시작');
   const startBtn = h(
@@ -61,39 +64,55 @@ export function createVoiceTutor({ getOptions }) {
       '설정에서 무료 키 넣기'
     )
   );
+  const introHint = h(
+    'p',
+    { class: 'hint' },
+    '한 번 누르면 마이크를 켜고 AI 튜터가 먼저 영어로 말을 겁니다. 아래 대화 설정(상황·수준·교정)이 그대로 쓰입니다.'
+  );
   const statusText = h('span');
   const engineBadge = h('span', { class: 'badge' });
   const statusRow = h('div', { class: 'voice-status' }, h('span', { class: 'voice-dot' }), statusText, engineBadge);
   const levelBar = h('div', { class: 'level-bar' });
   const levelBox = h('div', { class: 'level' }, levelBar);
-  const log = h('div', { class: 'voice-log', role: 'log', 'aria-label': '대화 내용' });
+  const log = h('div', {
+    class: 'voice-log',
+    role: 'log',
+    'aria-label': '대화 내용',
+    onscroll: () => (follow = log.scrollHeight - log.scrollTop - log.clientHeight <= FOLLOW_PX),
+  });
+  // 안내 문구가 나타나거나 화면을 돌려 대화 칸이 작아져도 맨 아래(새 말)를 계속 보여 준다
+  if (window.ResizeObserver) new ResizeObserver(() => follow && (log.scrollTop = log.scrollHeight)).observe(log);
+  const cutBtn = btn('말 끊기', interrupt, { cls: 'btn primary', ico: 'volumeX' });
   const pauseBtn = h('button', { class: 'btn', type: 'button', onclick: () => setPaused(!paused) });
   const controls = h(
     'div',
     { class: 'voice-controls' },
+    cutBtn,
     pauseBtn,
     btn('끝내기', () => finish(), { cls: 'btn danger', ico: 'stop' })
   );
   const notice = h('p', { class: 'hint', hidden: true });
-  const duplexToggle = toggle(
-    '이어폰 사용 (말 끊기 허용)',
-    getSettings().voiceDuplex,
+  const bargeToggle = toggle(
+    '말로 끊기',
+    getSettings().voiceBargeIn,
     (v) => {
-      updateSettings({ voiceDuplex: v });
-      session?.setDuplex?.(v);
+      updateSettings({ voiceBargeIn: v });
+      session?.setBargeIn?.(v);
     },
-    '끄면 튜터가 말하는 동안 마이크를 잠시 멈춰 스피커 소리를 다시 듣지 않습니다.'
+    '튜터가 말하는 중에 내가 말하면 튜터가 멈춥니다. 이어폰이 가장 확실하고, 스피커로도 됩니다(휴대폰마다 다름). 튜터가 저절로 자꾸 끊기면 끄고 "말 끊기" 버튼을 쓰세요.'
+  );
+  const privacyHint = h(
+    'p',
+    { class: 'hint' },
+    icon('info', { size: 14 }),
+    ' 대화 음성과 글은 Google Gemini로 전송되며, 무료 등급에서는 Google의 서비스 개선에 쓰일 수 있습니다.'
   );
 
   const el = h(
     'section',
     { class: 'card voice-card' },
     h('h3', { class: 'card-title' }, icon('mic'), '음성으로 바로 대화'),
-    h(
-      'p',
-      { class: 'hint' },
-      '한 번 누르면 마이크를 켜고 AI 튜터가 먼저 영어로 말을 겁니다. 아래 대화 설정(상황·수준·교정)이 그대로 쓰입니다.'
-    ),
+    introHint,
     startBtn,
     keyBox,
     notice,
@@ -101,26 +120,29 @@ export function createVoiceTutor({ getOptions }) {
     levelBox,
     log,
     controls,
-    duplexToggle,
-    h(
-      'p',
-      { class: 'hint' },
-      icon('info', { size: 14 }),
-      ' 대화 음성과 글은 Google Gemini로 전송되며, 무료 등급에서는 Google의 서비스 개선에 쓰일 수 있습니다.'
-    )
+    bargeToggle,
+    privacyHint
   );
+
+  /** 튜터가 말하는 중 ("말 끊기"를 쓸 수 있음). 기본 음성 모드는 답을 받는 동안도 포함 */
+  const tutorTalking = () =>
+    Boolean(session) && !paused && (status === 'speaking' || (engine === 'basic' && status === 'thinking'));
 
   function render() {
     const running = Boolean(session);
     const hasKey = Boolean(apiKey());
+    el.classList.toggle('running', running);
+    introHint.hidden = running;
+    privacyHint.hidden = running;
     startBtn.hidden = running || !hasKey;
     keyBox.hidden = running || hasKey;
-    duplexToggle.hidden = !hasKey;
+    bargeToggle.hidden = !hasKey || (running && engine === 'basic'); // 기본 음성 모드는 버튼으로만 끊는다
     statusRow.hidden = !running;
     controls.hidden = !running;
     levelBox.hidden = !running || engine !== 'live';
-    log.hidden = !log.childElementCount;
+    log.hidden = !running && !log.childElementCount; // 대화 중에는 비어 있어도 자리를 지켜 버튼이 아래에 머문다
     startLabel.textContent = log.childElementCount ? '새 대화 시작' : '음성으로 바로 대화 시작';
+    cutBtn.disabled = !tutorTalking();
     pauseBtn.replaceChildren(icon(paused ? 'play' : 'pause'), h('span', null, paused ? '이어서 대화' : '일시정지'));
     const state = paused ? 'paused' : status;
     statusRow.dataset.state = state;
@@ -137,6 +159,7 @@ export function createVoiceTutor({ getOptions }) {
     const options = getOptions();
     if (!options || session) return;
     log.replaceChildren();
+    follow = true;
     turn = {};
     paused = autoPaused = false;
     notice.hidden = true;
@@ -150,6 +173,7 @@ export function createVoiceTutor({ getOptions }) {
       return;
     }
     keepAwake('tutor', true); // 대화 중에는 화면이 꺼지지 않게
+    el.scrollIntoView({ block: 'start', behavior: 'smooth' }); // 카드를 화면 위에 맞춰 상태·대화·버튼이 모두 보이게
   }
 
   function begin(kind, options) {
@@ -166,14 +190,20 @@ export function createVoiceTutor({ getOptions }) {
       interim: showInterim,
       turnStart: () => {
         if (turn.endedAt) turn = {};
+        else if (turn.barge) turn = { me: turn.me }; // 말로 끊은 내 말에 대한 답: 새 말풍선으로 내 말 아래에
+        else delete turn.cut; // 끊은 뒤의 새 답: 그사이 한 내 말과 같은 차례로 쓴다
       },
-      turnEnd: () => (turn.endedAt = performance.now()),
-      interrupted: () => {
-        turn.tutor?.classList.add('cut');
-        turn = {};
+      bargeIn: () => {
+        // 튜터가 말하는 중에 내가 말하기 시작함: 내 말은 튜터 말풍선 아래 새 말풍선에 쓴다
+        if (!turn.cut && !turn.barge) turn = { tutor: turn.tutor, barge: true };
       },
+      turnEnd: () => {
+        if (!turn.cut) turn.endedAt = performance.now();
+      },
+      interrupted: () => cutTurn(true),
       correction: addCorrection,
       level: setLevel,
+      notice: (message) => showNotice(message),
       idle: () => {
         setPaused(true);
         showNotice('한동안 말소리가 없어 잠시 멈췄습니다. "이어서 대화"를 누르면 다시 듣습니다.');
@@ -182,7 +212,7 @@ export function createVoiceTutor({ getOptions }) {
     };
     session =
       kind === 'live'
-        ? startLive({ system: buildVoiceTutorSystem(options), duplex: getSettings().voiceDuplex, on })
+        ? startLive({ system: buildVoiceTutorSystem(options), bargeIn: getSettings().voiceBargeIn, on })
         : startFallback({ system: buildVoiceTutorSystem(options, { live: false }), on });
     render();
   }
@@ -212,14 +242,25 @@ export function createVoiceTutor({ getOptions }) {
     render();
   }
 
+  /** "말 끊기" 버튼: 튜터 말을 바로 멈추고 내 차례로 */
+  function interrupt() {
+    if (tutorTalking()) session.interrupt();
+  }
+
+  /** 튜터 말이 끊김: 말풍선에 끊김 표시를 하고, 다음 답이 시작될 때까지 끊은 답의 글(듣지 못한 말)은 쓰지 않는다 */
+  function cutTurn(mark) {
+    if (turn.cut) return;
+    if (mark) turn.tutor?.classList.add('cut');
+    turn = turn.barge ? { cut: true, me: turn.me } : { cut: true }; // 말로 끊었으면 이어지는 내 말은 같은 말풍선에
+  }
+
   function setPaused(v) {
     if (!session) return;
+    if (v) cutTurn(tutorTalking()); // 멈추면 만들던 답이 버려지므로, 다시 시작한 말은 새 말풍선에 쓴다
     paused = v;
     session.setPaused(v);
     keepAwake('tutor', !v);
-    if (v) {
-      turn = {}; // 멈추면 만들던 답이 버려질 수 있으므로, 다시 시작한 말은 새 말풍선에 쓴다
-    } else {
+    if (!v) {
       autoPaused = false;
       clearTimeout(awayTimer);
       notice.hidden = true;
@@ -242,20 +283,22 @@ export function createVoiceTutor({ getOptions }) {
     if (session && autoPaused) setPaused(false);
   }
 
+  /** 새 말을 보여 준다. 위로 올려 지난 말을 읽는 중이면 끌어내리지 않는다 */
   function reveal() {
     log.hidden = false;
-    log.scrollTop = log.scrollHeight;
+    if (follow) log.scrollTop = log.scrollHeight;
   }
 
   function addText(role, text) {
     if (role === 'me') showInterim('');
+    else if (turn.cut) return; // 끊은 답의 나머지는 학습자가 듣지 못한 말이다
     if (turn.endedAt && performance.now() - turn.endedAt > LATE_TEXT_MS) turn = {};
     let b = turn[role];
     if (!b) {
       b = h('div', { class: `bubble ${role}`, lang: 'en' });
       turn[role] = b;
-      // 받아쓰기는 순서가 뒤바뀌어 올 수 있다: 내 말이 튜터 답보다 늦게 오면 그 앞에 넣는다
-      if (role === 'me' && turn.tutor) turn.tutor.before(b);
+      // 받아쓰기는 순서가 뒤바뀌어 올 수 있다: 내 말이 튜터 답보다 늦게 오면 그 앞에 넣는다 (끼어든 말은 뒤에)
+      if (role === 'me' && turn.tutor && !turn.barge) turn.tutor.before(b);
       else log.append(b);
     }
     b.textContent = (b.textContent + text).replace(/\s+/g, ' ').trimStart();

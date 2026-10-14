@@ -25,6 +25,7 @@ const ASSETS = [
   'js/components/voice-tutor.js',
   'js/components/word-sheet.js',
   'js/lib/api-parse.js',
+  'js/lib/barge-in.js',
   'js/lib/clock.js',
   'js/lib/dict-entry.js',
   'js/lib/gemini-policy.js',

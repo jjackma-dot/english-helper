@@ -20,7 +20,7 @@ const DEFAULT_SETTINGS = {
   ottRewindClock: true, // 되감기 때 앱 시계도 함께 되돌림
   ottListenSeconds: 20, // "방금 뭐라고?"로 보낼 최근 구간(초)
   autoSpeakTranslation: false,
-  voiceDuplex: false, // 음성 튜터: 이어폰을 쓰면 튜터가 말하는 중에도 마이크를 보내 말을 끊을 수 있다
+  voiceBargeIn: true, // 음성 튜터 "말로 끊기": 튜터가 말하는 중에 내가 말하면 멈춘다 (스피커일 때는 메아리를 걸러 내 목소리만 알아챔)
   tutor: { ...DEFAULT_TUTOR_OPTIONS },
 };
 

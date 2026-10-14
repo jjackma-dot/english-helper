@@ -112,22 +112,23 @@ export async function transcribeAndTranslate(audio, sourceLang = 'auto', { signa
 
 /* ---------- OTT "방금 뭐라고?": 방금 들린 대사 받아쓰기·해석 ---------- */
 
+const LINE = S.obj({ en: S.str('English line'), ko: S.str('Natural Korean translation') });
+const PHRASES = S.arr(
+  S.obj({
+    phrase: S.str('English expression from the lines'),
+    meaningKo: S.str('Korean meaning'),
+    noteKo: S.str('Short Korean note (usage, slang, reduction or linking)'),
+  }),
+  '0–4 items'
+);
+const CONFIDENCE = { ...S.str('How sure you are about what was said'), enum: ['high', 'medium', 'low'] };
+
 // S.obj는 키를 적은 순서대로 보내므로, 스트리밍 중에도 대사 → 표현 → 설명 순서로 온다
 const CLIP_SCHEMA = S.obj({
-  lines: S.arr(
-    S.obj({ en: S.str('English line'), ko: S.str('Natural Korean translation') }),
-    'The last 1–3 utterances, oldest first'
-  ),
-  phrases: S.arr(
-    S.obj({
-      phrase: S.str('English expression from the lines'),
-      meaningKo: S.str('Korean meaning'),
-      noteKo: S.str('Short Korean note (usage, slang, reduction or linking)'),
-    }),
-    '0–4 items'
-  ),
+  lines: S.arr(LINE, 'The last 1–3 utterances, oldest first'),
+  phrases: PHRASES,
   explanationKo: S.str('Short Korean explanation of what is going on and anything a learner might miss'),
-  confidence: { ...S.str('How sure you are about what was said'), enum: ['high', 'medium', 'low'] },
+  confidence: CONFIDENCE,
 });
 
 const CLIP_SYSTEM =
@@ -164,15 +165,28 @@ const CLIP_END = ' If there is no clear English speech, return an empty lines ar
  */
 export async function explainClip(audio, { signal, onPartial } = {}) {
   const data = await blobToBase64(audio);
-  const ask = async (task) => ({
-    ...(await generate({
+  return transcriptOrGist(
+    (task) => ({
       system: CLIP_SYSTEM,
       parts: [{ inlineData: { mimeType: 'audio/wav', data } }, { text: CLIP_SITUATION + CLIP_TASK[task] + CLIP_END }],
       schema: CLIP_SCHEMA,
       signal,
-      onPartial: onPartial && ((p) => onPartial({ ...p, paraphrased: task === 'gist' })),
       firstChunkMs: 25000, // 소리를 듣고 답하므로 글보다 첫 글자가 늦다
       timeoutMs: 60000,
+    }),
+    onPartial
+  );
+}
+
+/**
+ * 원문 대사로 묻고, 저작권 보호(RECITATION)로 막히면 한 번만 쉬운 영어 요지로 다시 묻는다.
+ * @param {(task: 'transcript'|'gist') => object} request task별 generate() 옵션
+ */
+async function transcriptOrGist(request, onPartial) {
+  const ask = async (task) => ({
+    ...(await generate({
+      ...request(task),
+      onPartial: onPartial && ((p) => onPartial({ ...p, paraphrased: task === 'gist' })),
     })),
     paraphrased: task === 'gist',
   });
@@ -183,4 +197,113 @@ export async function explainClip(audio, { signal, onPartial } = {}) {
     onPartial?.({ paraphrased: true }); // 막히기 전에 보여 준 원문 조각을 지운다
     return ask('gist');
   }
+}
+
+/* ---------- OTT 이어폰으로 볼 때: 따라 말한 소리·적은 소리로 대사 짐작하기 ---------- */
+
+export const GUESS_TEXT_MAX = 300; // 적어서 묻기 최대 글자 수
+export const SCENE_MAX = 60; // 작품·장면 메모 최대 글자 수
+
+const GUESS_SITUATION = {
+  voice:
+    'The learner was watching an English-language show or movie (often with earphones) and did not catch a line. ' +
+    'In this recording the learner is IMITATING from memory how that line sounded. It is not the original audio. ' +
+    'The imitation is approximate: mumbled or broken sounds, partial words, Korean-like syllables and wrong vowels ' +
+    'are all expected. If the learner also says something in Korean, use it only as a hint. ',
+  text:
+    'The learner was watching an English-language show or movie (often with earphones) and did not catch a line. ' +
+    'Below is how the line sounded to them, written as best they could: English fragments, misspellings, ' +
+    'or Korean Hangul spelling of the sounds (for example 워러 = "water", 고나 = "gonna"). ',
+};
+
+const GUESS_HOW =
+  'Think about how fast spoken English sounds to Korean ears: linking between words, reductions ' +
+  '(gonna, wanna, gotta, kinda, "did you" → "didja"), flapping (t/d between vowels sounds like a quick r: ' +
+  'water → 워러), dropped sounds and weak vowels. ';
+
+const GUESS_TASK = {
+  transcript:
+    'Reconstruct the most likely natural English line they heard. ' +
+    GUESS_HOW +
+    'In lines, give one candidate if one reading clearly fits, or up to 3 genuinely different candidates, ' +
+    'most likely first, each with a natural Korean translation. In phrases, explain key expressions in Korean. ' +
+    'In explanationKo, explain briefly in Korean why the line sounded that way (which sounds link, reduce or flap).',
+  gist:
+    'Work out the most likely line they heard. ' +
+    GUESS_HOW +
+    'Do NOT quote any script word for word: in lines, write the gist of 1–3 likely candidates in simple English ' +
+    'in your own words, most likely first, with Korean meanings. In phrases, list key expressions (a few words each) ' +
+    'with Korean meanings and short notes on how they sound. In explanationKo, explain briefly in Korean why it ' +
+    'sounded that way.',
+};
+
+const GUESS_END =
+  ' Set confidence to high only when one reading clearly fits, and low when you are mostly guessing. ' +
+  'If you cannot tell what the line was, return an empty lines array and say so in explanationKo.';
+
+/** 한 줄로 줄이고 앞뒤 공백을 지운 뒤 max 글자까지 */
+function oneLine(s, max) {
+  return String(s ?? '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, max);
+}
+
+/**
+ * "들린 대로 말하기·적어서 묻기" 요청문.
+ * @param {{text?: string, scene?: string, task?: 'transcript'|'gist'}} o text가 있으면 적어서 묻기, 없으면 따라 말한 녹음
+ *   scene: 학습자가 적은 작품·장면 (선택)
+ */
+export function buildGuessPrompt({ text = '', scene = '', task = 'transcript' } = {}) {
+  const heard = String(text ?? '')
+    .trim()
+    .slice(0, GUESS_TEXT_MAX);
+  const where = oneLine(scene, SCENE_MAX);
+  return [
+    GUESS_SITUATION[heard ? 'text' : 'voice'],
+    where
+      ? `Show or scene, written by the learner (may be partial or in Korean): "${where}". ` +
+        "Prefer lines that fit this show's characters, setting and style. "
+      : '',
+    GUESS_TASK[task] || GUESS_TASK.transcript,
+    GUESS_END,
+    heard ? `\n\nHow it sounded to the learner:\n"""\n${heard}\n"""` : '',
+  ].join('');
+}
+
+/** 따라 말한 녹음이면 학습자 목소리가 어떻게 들렸는지(heard)를 맨 먼저 받는다 (화면에 바로 보여 주고, 짐작에도 도움) */
+function guessSchema(voice) {
+  return S.obj({
+    ...(voice
+      ? { heard: S.str("How the learner's imitation sounds, written briefly in Hangul or English letters") }
+      : {}),
+    lines: S.arr(LINE, 'Candidate lines, most likely first (1–3; only one if you are sure)'),
+    phrases: PHRASES,
+    explanationKo: S.str('Short Korean note on why the line sounded that way (linking, reductions, flapping)'),
+    confidence: CONFIDENCE,
+  });
+}
+
+/**
+ * 이어폰으로 보다가 놓친 대사 짐작하기 (Gemini 필요). 학습자가 따라 말한 녹음(audio)이나 적은 소리(text)로
+ * 가장 그럴듯한 영어 대사 1~3개(가능성 높은 순)와 해석·표현·왜 그렇게 들렸는지를 받는다.
+ * 돌려주는 모양은 explainClip과 같고, 따라 말한 녹음이면 heard(학습자 목소리가 들린 대로)가 더 있다.
+ * @param {{audio?: Blob, text?: string, scene?: string}} input audio(16kHz WAV) 또는 text
+ * @param {{signal?: AbortSignal, onPartial?: (partial: object) => void}} [o]
+ */
+export async function guessLine({ audio, text = '', scene = '' } = {}, { signal, onPartial } = {}) {
+  const voice = !String(text ?? '').trim();
+  if (voice && !audio) throw new Error('들린 소리를 말하거나 적어 주세요.');
+  const data = voice ? await blobToBase64(audio) : '';
+  return transcriptOrGist((task) => {
+    const prompt = buildGuessPrompt({ text: voice ? '' : text, scene, task });
+    return {
+      system: CLIP_SYSTEM,
+      parts: voice ? [{ inlineData: { mimeType: 'audio/wav', data } }, { text: prompt }] : [{ text: prompt }],
+      schema: guessSchema(voice),
+      signal,
+      firstChunkMs: voice ? 25000 : 20000, // 소리를 듣거나 여러 후보를 따져 보느라 첫 글자가 늦다
+      timeoutMs: voice ? 60000 : 45000,
+    };
+  }, onPartial);
 }

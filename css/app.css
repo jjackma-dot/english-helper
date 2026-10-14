@@ -49,7 +49,7 @@
 
 html {
   -webkit-text-size-adjust: 100%;
-  scroll-padding-top: 64px;
+  scroll-padding-top: calc(64px + env(safe-area-inset-top));
 }
 
 body {
@@ -1272,6 +1272,9 @@ audio {
   body[data-view='ott'] .app-header {
     display: none;
   }
+  html:has(body[data-view='ott']) {
+    scroll-padding-top: 8px; /* 머리글을 숨겼으니 결과 칸을 맨 위까지 올린다 */
+  }
   body[data-view='ott'] main {
     padding-top: 8px;
   }
@@ -1381,6 +1384,38 @@ audio {
 .voice-card {
   border: 2px solid color-mix(in srgb, var(--primary) 45%, var(--border));
 }
+/* 대화 중: 카드를 머리글(64px)과 아래 탭 사이에 꼭 맞춰 상태·대화·버튼이 모두 보이고 대화 내용만 스크롤된다 */
+.voice-card.running {
+  height: calc(
+    100dvh - 64px - env(safe-area-inset-top) - var(--tabbar-h) - env(safe-area-inset-bottom) - 10px
+  );
+  min-height: 380px; /* 분할 화면처럼 아주 짧은 화면에서는 페이지를 스크롤한다 */
+  gap: 10px;
+}
+.voice-card.running .voice-log {
+  flex: 1 1 0;
+  min-height: 0;
+  max-height: none;
+}
+.voice-card.running .toggle .hint {
+  display: none; /* 대화 중에는 스위치 이름만 (설명은 대화 전에 보임) */
+}
+/* 가로 화면·분할 화면처럼 세로가 짧을 때: 대화 중에는 머리글·제목·스위치를 숨겨 대화와 버튼이 모두 보이게 */
+@media (max-height: 560px) {
+  html:has(.voice-card.running) {
+    scroll-padding-top: 8px;
+  }
+  html:has(.voice-card.running) .app-header {
+    display: none;
+  }
+  .voice-card.running {
+    height: calc(100dvh - env(safe-area-inset-top) - var(--tabbar-h) - env(safe-area-inset-bottom) - 16px);
+    min-height: 220px;
+  }
+  .voice-card.running :is(.card-title, .level, .toggle) {
+    display: none;
+  }
+}
 .voice-start {
   width: 100%;
   min-height: 64px;
@@ -1480,8 +1515,15 @@ audio {
 }
 .voice-controls {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+.voice-controls .btn {
+  flex-direction: column; /* 좁은 화면에서도 세 버튼이 한 줄에 들어가게 아이콘 아래 글자 */
+  gap: 2px;
+  min-height: 56px;
+  padding: 4px 6px;
+  font-size: 0.9rem;
 }
 .group-title {
   margin: 8px 2px 0;
@@ -1535,13 +1577,36 @@ ul.listen-about {
   box-shadow: none;
 }
 
-/* 분할 화면처럼 세로가 짧을 때: 듣는 중에는 안내 문구를 숨기고 최근 결과와 큰 버튼을 우선 */
+/* 이어폰으로 볼 때: 들린 대로 말하기 · 적어서 묻기 */
+.guess-chips {
+  gap: 6px;
+}
+.guess-card .talk-btn {
+  min-height: 72px;
+}
+.guess-card .rec-time {
+  font-size: 1.25rem;
+}
+/* 짐작한 대사 후보 이름표 ("가장 그럴듯한 대사" 등) */
+.line > .tag {
+  align-self: flex-start;
+}
+
+/* 분할 화면처럼 세로가 짧을 때: 듣는 중이나 이어폰 칸을 연 동안에는 안내 문구를 숨기고 결과와 큰 버튼을 우선 */
 @media (max-height: 640px) {
   .listen-card {
     padding: 10px 12px;
     gap: 8px;
   }
-  .listen-card.on .listen-about {
+  .listen-card.on .listen-about,
+  .listen-card.guessing .listen-about {
     display: none;
+  }
+  .guess-card {
+    gap: 8px;
+  }
+  .guess-card .talk-btn {
+    flex-direction: row;
+    min-height: 56px;
   }
 }
