@@ -1,6 +1,6 @@
 // 단어장: 사전·번역·OTT에서 저장한 단어와 문장
 
-import { h, btn, iconBtn, clear, toast, segmented, toggle } from '../ui.js';
+import { h, btn, iconBtn, clear, toast, segmented, toggle, isIOS } from '../ui.js';
 import { icon } from '../icons.js';
 import { listWords, removeWord, importWords } from '../store.js';
 import { speak } from '../speech.js';
@@ -76,11 +76,26 @@ function render() {
   }
 }
 
-function exportWords() {
+async function exportWords() {
   const data = { app: 'english-helper', version: 1, exportedAt: new Date().toISOString(), words: listWords() };
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const json = JSON.stringify(data, null, 2);
+  const name = `english-helper-words-${new Date().toISOString().slice(0, 10)}.json`;
+  // 아이폰 홈 화면 앱에서는 내려받기가 미리 보기로만 열려 저장이 어렵다 → 공유 시트(파일에 저장·에어드롭·카톡)로 보낸다
+  if (isIOS) {
+    const file = new File([json], name, { type: 'application/json' });
+    if (navigator.canShare?.({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: 'English Helper 단어장' });
+        return;
+      } catch (e) {
+        if (e?.name === 'AbortError') return; // 사용자가 취소
+        // 공유가 막히면 아래 내려받기로
+      }
+    }
+  }
+  const blob = new Blob([json], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
-  const a = h('a', { href: url, download: `english-helper-words-${new Date().toISOString().slice(0, 10)}.json` });
+  const a = h('a', { href: url, download: name });
   document.body.append(a);
   a.click();
   a.remove();
@@ -169,7 +184,15 @@ export function init(root) {
         h(
           'p',
           { class: 'hint' },
-          '단어장은 이 휴대폰(브라우저)에만 저장됩니다. 앱을 지우거나 사이트 데이터를 삭제하기 전에 내보내 두세요.'
+          '단어장은 이 휴대폰(브라우저)에만 저장됩니다. 앱을 지우거나 사이트 데이터를 삭제하기 전에 내보내 두세요.',
+          isIOS ? ' Safari와 홈 화면 앱의 단어장은 서로 따로예요.' : null
+        ),
+        h(
+          'p',
+          { class: 'hint' },
+          isIOS
+            ? '다른 휴대폰으로 옮기려면: 내보내기 → 카톡·에어드롭 등으로 보내기 → 그 휴대폰의 단어장 탭에서 가져오기(이미 있는 단어는 건너뜀).'
+            : '다른 휴대폰으로 옮기려면: 내보내기(다운로드 폴더에 저장) → 그 파일을 카톡 등으로 보내기 → 그 휴대폰의 단어장 탭에서 가져오기(이미 있는 단어는 건너뜀).'
         )
       )
     )

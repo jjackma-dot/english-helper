@@ -1,6 +1,21 @@
 // 3) 번역: 텍스트 번역, 실시간 음성 통역(문장 단위), 녹음 후 받아쓰기·번역(Gemini), 사진 속 글자 번역(Gemini)
 
-import { h, btn, iconBtn, clear, toast, copyWithToast, errorMessage, segmented, toggle, field } from '../ui.js';
+import {
+  h,
+  btn,
+  iconBtn,
+  clear,
+  toast,
+  copyWithToast,
+  errorMessage,
+  segmented,
+  toggle,
+  field,
+  isAndroid,
+  isIOS,
+  isStandalone,
+  browserHint,
+} from '../ui.js';
 import { icon } from '../icons.js';
 import {
   getSettings,
@@ -25,7 +40,7 @@ import {
 import { translate, transcribeAndTranslate, translateImage } from '../services/translate.js';
 import { prepareImage, takeSharedPhoto } from '../services/photo-file.js';
 import { startRecording, recordingSupported } from '../services/recorder.js';
-import { speak, stopSpeaking, createListener, listenOnce, sttSupported } from '../speech.js';
+import { speak, stopSpeaking, primeSpeech, createListener, listenOnce, sttSupported } from '../speech.js';
 import { tappableEnglish } from '../components/word-sheet.js';
 
 const LABEL = { ko: '한국어', en: 'English' };
@@ -75,6 +90,14 @@ function resultActions(text, lang, source) {
 
 function engineBadge(r) {
   return h('span', { class: 'badge' }, r.engine === 'gemini' ? 'Gemini' : 'MyMemory');
+}
+
+/**
+ * 번역을 자동으로 읽을 때: 누른 순간(기다리기 전)에 불러야 한다.
+ * 아이폰은 누르지 않고 처음 읽으면 소리가 나지 않아 미리 깨워 둔다 (다른 기기에서는 아무것도 안 함)
+ */
+function primeAutoSpeak() {
+  if (getSettings().autoSpeakTranslation) primeSpeech();
 }
 
 /* ---------- 텍스트 번역 ---------- */
@@ -148,6 +171,7 @@ function buildTextPanel() {
                   type: 'button',
                   class: 'history-item',
                   onclick: () => {
+                    primeAutoSpeak();
                     // 사진 번역 기록은 from이 'other'(일본어 등)일 수 있다: 한국어가 아니면 영 → 한으로 다시 번역
                     const d = textDirection(it.from);
                     setDir(d.from, d.to);
@@ -171,6 +195,7 @@ function buildTextPanel() {
     ? btn(
         '말로 입력',
         async () => {
+          primeAutoSpeak(); // 들은 말을 번역해 읽을 수 있다
           micBtn.classList.add('recording');
           try {
             const said = await listenOnce(SPEECH_LANG[dir.from]);
@@ -201,8 +226,13 @@ function buildTextPanel() {
     src.focus();
   }
 
+  // 누른 순간 소리를 깨운 뒤 번역 (번역 버튼·Ctrl+Enter)
+  const runByTap = () => {
+    primeAutoSpeak();
+    run();
+  };
   src.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) run();
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) runByTap();
   });
   renderHistory();
 
@@ -213,7 +243,7 @@ function buildTextPanel() {
     h(
       'div',
       { class: 'row wrap' },
-      btn('번역하기', run, { cls: 'btn primary', ico: 'globe' }),
+      btn('번역하기', runByTap, { cls: 'btn primary', ico: 'globe' }),
       micBtn,
       btn(
         '지우기',
@@ -232,6 +262,15 @@ function buildTextPanel() {
 }
 
 /* ---------- 실시간 통역 ---------- */
+
+/** 음성 인식이 없을 때 안내 (기기에 맞는 브라우저 이름) */
+function noSttText() {
+  const lead = '이 브라우저는 음성 인식을 지원하지 않습니다. ';
+  if (isIOS && isStandalone()) {
+    return `${lead}아이폰 홈 화면 앱에서는 음성 인식이 막혀 있을 수 있어요. Safari에서 같은 주소를 여세요(Gemini 키가 있으면 녹음 모드도 쓸 수 있어요).`;
+  }
+  return lead + browserHint();
+}
 
 function buildLivePanel() {
   const interim = h('div', { class: 'interim', 'aria-live': 'polite' });
@@ -273,6 +312,7 @@ function buildLivePanel() {
     if (live.lang === lang) return stopLive();
     stopLive();
     stopSpeaking();
+    primeAutoSpeak(); // 누른 처리 안에서, 듣기 전에
     live.lang = lang;
     const listener = createListener({
       lang: SPEECH_LANG[lang],
@@ -303,7 +343,9 @@ function buildLivePanel() {
     // 번역을 소리로 읽을 때는 그 소리가 다시 인식되지 않도록 잠시 듣기를 멈춘다
     if (autoSpeak && live.listener === listener) {
       live.pausedForTts = true;
-      listener.stop();
+      // 문장은 이미 받았다. 아이폰은 stop() 뒤 읽기 소리가 나면 다음 듣기가 멈춰 버릴 수 있어 abort()로 끊는다
+      if (isIOS && listener.abort) listener.abort();
+      else listener.stop();
     }
     const trans = h('div', { class: 'muted loading' }, h('span', { class: 'spinner' }), '번역 중…');
     const li = h(
@@ -348,13 +390,14 @@ function buildLivePanel() {
       { class: 'hint' },
       '말을 하면 문장이 끝날 때마다 바로 번역합니다. 마주 보고 대화할 때는 말하는 사람이 자기 언어 버튼을 누르세요.'
     ),
-    sttSupported
-      ? h('div', { class: 'talk-row' }, koBtn, enBtn)
-      : h('p', { class: 'error-text' }, '이 브라우저는 음성 인식을 지원하지 않습니다. 안드로이드 크롬에서 사용하세요.'),
+    sttSupported ? h('div', { class: 'talk-row' }, koBtn, enBtn) : h('p', { class: 'error-text' }, noSttText()),
     toggle(
       '번역 결과를 소리로 읽기',
       getSettings().autoSpeakTranslation,
-      (v) => updateSettings({ autoSpeakTranslation: v }),
+      (v) => {
+        updateSettings({ autoSpeakTranslation: v });
+        if (v) primeSpeech(); // 아이폰: 통역 중에 켜도 다음 번역부터 소리가 나게 누른 순간에 깨운다
+      },
       '읽는 동안에는 잠시 듣기를 멈춥니다'
     ),
     interim,
@@ -384,6 +427,28 @@ function buildLivePanel() {
 }
 
 /* ---------- 녹음 후 번역 ---------- */
+
+/**
+ * 녹음 파일 저장 버튼. 아이폰은 내려받기 링크가 잘 안 되므로 공유 시트로 보낸다 ("파일에 저장"을 고르면 됨).
+ * 그 밖의 기기는 내려받기 링크
+ */
+function saveChip(blob, url, name) {
+  const file = isIOS ? new File([blob], name, { type: 'audio/wav' }) : null;
+  if (file && navigator.canShare?.({ files: [file] })) {
+    return btn(
+      '파일 저장',
+      async () => {
+        try {
+          await navigator.share({ files: [file] });
+        } catch (e) {
+          if (e?.name !== 'AbortError') toast('파일을 저장하지 못했습니다.');
+        }
+      },
+      { cls: 'chip', ico: 'download' }
+    );
+  }
+  return h('a', { class: 'chip', href: url, download: name }, icon('download'), '파일 저장');
+}
 
 function buildRecordPanel() {
   let rec = null;
@@ -444,7 +509,7 @@ function buildRecordPanel() {
           'div',
           { class: 'row between' },
           h('b', null, `녹음 ${formatClock(seconds)}`),
-          h('a', { class: 'chip', href: lastUrl, download: `recording-${stamp}.wav` }, icon('download'), '파일 저장')
+          saveChip(blob, lastUrl, `recording-${stamp}.wav`)
         ),
         h('audio', { controls: true, src: lastUrl, preload: 'auto' }),
         geminiEnabled()
@@ -558,8 +623,24 @@ function loadingLine(msg) {
   return h('p', { class: 'muted loading' }, h('span', { class: 'spinner' }), msg);
 }
 
-/** 키 없이도 쓸 수 있는 휴대폰 기능 안내 */
+/** 키 없이도 쓸 수 있는 휴대폰 기능 안내 (아이폰과 그 밖의 기기: 갤럭시 기준) */
 function phoneTips() {
+  if (isIOS) {
+    return h(
+      'ul',
+      { class: 'hint photo-tips' },
+      h('li', null, h('b', null, '아이폰 카메라'), ': 글자를 비추면 나오는 텍스트 인식 버튼 → 번역'),
+      h('li', null, h('b', null, '사진 앱'), ': 사진을 열고 텍스트 인식 버튼 → 글자를 길게 눌러 번역'),
+      h(
+        'li',
+        null,
+        h('b', null, '아이폰 16·17'),
+        ': 카메라 컨트롤을 길게 눌러 시각 지능 → 번역 (Apple Intelligence 켜야 함)'
+      ),
+      h('li', null, h('b', null, '번역 앱'), ' → 카메라'),
+      h('li', null, '기종·버전에 따라 이름이 다를 수 있어요.')
+    );
+  }
   return h(
     'ul',
     { class: 'hint photo-tips' },
@@ -939,7 +1020,8 @@ function buildPhotoPanel({ onEdit, onSaved }) {
       'p',
       { class: 'hint' },
       '메뉴판·안내문·책·화면 캡처처럼 사진 속 글자를 읽어 번역합니다 (영어 → 한국어, 한국어 → 영어). ',
-      '갤러리에서 공유 → English Helper로 보내도 됩니다.'
+      // 다른 앱에서 공유받기는 안드로이드에서만 된다 (아이폰 사파리는 공유 대상 앱으로 등록할 수 없음)
+      isAndroid ? '갤러리에서 공유 → English Helper로 보내도 됩니다.' : null
     ),
     keyBox,
     picks,

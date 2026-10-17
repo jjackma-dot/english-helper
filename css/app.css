@@ -126,6 +126,9 @@ button {
   justify-content: space-between;
   gap: 8px;
   padding: calc(8px + env(safe-area-inset-top)) 16px 8px;
+  /* 가로 화면에서 아이폰 다이내믹 아일랜드·카메라 구멍 아래로 들어가지 않게 */
+  padding-right: max(16px, env(safe-area-inset-right));
+  padding-left: max(16px, env(safe-area-inset-left));
   background: color-mix(in srgb, var(--bg) 88%, transparent);
   backdrop-filter: saturate(1.4) blur(10px);
   border-bottom: 1px solid var(--border);
@@ -190,6 +193,7 @@ main {
   color: var(--muted);
   text-decoration: none;
   font-weight: 600;
+  -webkit-touch-callout: none; /* 아이폰: 길게 눌러도 링크 미리 보기가 뜨지 않게 */
 }
 .tabbar a[aria-current='page'] {
   color: var(--primary);
@@ -352,9 +356,20 @@ details:not(.card) > summary {
 .callout.ai {
   background: var(--accent-soft);
 }
+.callout.warn {
+  background: var(--accent-soft);
+  font-weight: 600;
+}
 .callout ul {
   margin: 6px 0 0;
   padding-left: 18px;
+}
+.steps {
+  margin: 0;
+  padding-left: 22px;
+}
+.steps li + li {
+  margin-top: 6px;
 }
 
 .quote {
@@ -380,7 +395,9 @@ details:not(.card) > summary {
   text-align: center;
   text-decoration: none;
   cursor: pointer;
+  -webkit-user-select: none; /* 아이폰 Safari는 접두사 붙은 것만 알아듣는다 */
   user-select: none;
+  -webkit-touch-callout: none;
 }
 .btn:active {
   transform: translateY(1px);
@@ -669,6 +686,12 @@ input[type='range'] {
   font-size: 0.88rem;
   font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
   background: var(--surface-2);
+}
+/* 아이폰(이 속성은 아이폰 Safari만 안다): 16px보다 작은 입력 칸을 누르면 화면이 확대된 채 남으므로 16px 이상 */
+@supports (-webkit-touch-callout: none) {
+  .prompt-box {
+    font-size: max(16px, 0.88rem);
+  }
 }
 
 /* ---------- 토스트 · 시트 · 업데이트 ---------- */
@@ -1036,7 +1059,10 @@ audio {
 .spoiler {
   filter: blur(6px);
   cursor: pointer;
+  /* 길게 눌러 선택·복사·찾아보기로 가린 뜻이 보이지 않게 (아이폰은 접두사 필요) */
+  -webkit-user-select: none;
   user-select: none;
+  -webkit-touch-callout: none;
   transition: filter 0.15s;
 }
 .spoiler.revealed {

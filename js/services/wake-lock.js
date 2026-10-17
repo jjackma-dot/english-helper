@@ -2,6 +2,7 @@
 // 쓰는 쪽(owner)마다 따로 켜고 끄며 아무도 쓰지 않을 때만 놓는다.
 
 const owners = new Set();
+const idleWaiters = new Set();
 let lock = null;
 let requesting = false;
 
@@ -35,7 +36,16 @@ export function keepAwake(owner, on) {
     acquire();
   } else if (owners.delete(owner) && !owners.size) {
     release();
+    const waiters = [...idleWaiters];
+    idleWaiters.clear();
+    for (const cb of waiters) cb();
   }
+}
+
+/** 화면을 켜 두는 일(음성 대화·OTT 듣기·자막 따라가기)이 없으면 바로, 있으면 모두 끝난 뒤에 cb를 한 번 부른다 */
+export function whenIdle(cb) {
+  if (owners.size) idleWaiters.add(cb);
+  else cb();
 }
 
 // 화면을 벗어나면 브라우저가 잠금을 풀어 버리므로, 돌아왔을 때 아직 쓰는 쪽이 있으면 다시 건다

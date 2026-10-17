@@ -33,12 +33,18 @@ function resetReg() {
 }
 resetReg();
 
-class FakeTrack {
+class FakeTrack extends EventTarget {
   kind = 'audio';
   enabled = true;
   readyState = 'live';
+  /** 진짜 브라우저처럼 페이지가 stop()으로 닫을 때는 'ended'를 알리지 않는다 */
   stop() {
     this.readyState = 'ended';
+  }
+  /** 시스템이 마이크를 끊음 (전화·권한 회수 등) */
+  endBySystem() {
+    this.readyState = 'ended';
+    this.dispatchEvent(new Event('ended'));
   }
 }
 
@@ -102,6 +108,9 @@ class FakeAudioContext {
   destination = {};
   sources = [];
   closed = false;
+  state = 'running';
+  resumes = 0; // resume()을 부른 횟수
+  onstatechange = null;
   constructor(opts = {}) {
     this.sampleRate = opts.sampleRate ?? 48000;
     this.audioWorklet = { addModule: async (url) => void reg.modules.push(String(url)) };
@@ -111,11 +120,19 @@ class FakeAudioContext {
     return clock.ms / 1000;
   }
   resume() {
+    this.resumes++;
+    if (this.state !== 'closed') this.state = 'running';
     return Promise.resolve();
   }
   close() {
     this.closed = true;
+    this.state = 'closed';
     return Promise.resolve();
+  }
+  /** 시스템이 상태를 바꿈 (아이폰: 전화·Siri 때 'interrupted', 끝나면 'running') */
+  systemState(state) {
+    this.state = state;
+    this.onstatechange?.();
   }
   createMediaStreamSource(stream) {
     this.mic = { stream, disconnected: false, connect: (n) => n, disconnect: () => (this.mic.disconnected = true) };
@@ -262,7 +279,11 @@ async function begin(t, { bargeIn = true, stopAtOnce = false } = {}) {
   resetReg();
   const log = [];
   const levels = [];
+  const fails = [];
+  const hooks = {}; // 시험이 화면(voice-tutor)처럼 알림에 답하게 한다 (systemPause → setPaused(true) 등)
   const on = {
+    systemPause: () => (log.push('systemPause'), hooks.systemPause?.()),
+    systemResume: () => (log.push('systemResume'), hooks.systemResume?.()),
     status: (x) => log.push(`status:${x}`),
     userText: (x) => log.push(`me:${x}`),
     tutorText: (x) => log.push(`tutor:${x}`),
@@ -272,7 +293,7 @@ async function begin(t, { bargeIn = true, stopAtOnce = false } = {}) {
     bargeIn: () => log.push('bargeIn'),
     correction: (c) => log.push(`correction:${c.corrected}`),
     notice: (m) => log.push(`notice:${m}`),
-    fail: (c) => log.push(`fail:${c.kind}`),
+    fail: (c) => (fails.push(c), log.push(`fail:${c.kind}`)),
     level: (l) => levels.push(l),
   };
   const live = startLive({ system: 'Be a friendly tutor.', bargeIn, on });
@@ -283,6 +304,8 @@ async function begin(t, { bargeIn = true, stopAtOnce = false } = {}) {
     live,
     log,
     levels,
+    fails,
+    hooks,
     pending,
     get ws() {
       return reg.sockets.at(-1);
@@ -860,6 +883,99 @@ test('일시정지: 마이크 트랙을 끄고, 멈추기 전 답과 멈춘 동�
   assert.equal(s.sounding().length, 1);
   assert.deepEqual(s.events(m).slice(2), ['me:Sorry, I am back.', 'turnStart', 'tutor:Welcome back!']);
   s.live.stop();
+});
+
+test('아이폰 전화·Siri: 소리 처리가 interrupted가 되면 멈춰 달라고 한 번 알리고, 시스템이 모두 되돌리면 이어 가라고 알린다', async (t) => {
+  const s = await greeted(t);
+  s.hooks.systemPause = () => s.live.setPaused(true); // 화면은 다른 앱으로 갈 때처럼 잠시 멈춘다
+  s.audio(1000);
+  const [reply] = s.sounding();
+  const m = s.mark();
+
+  s.speaker.systemState('interrupted');
+  assert.deepEqual(s.events(m), ['systemPause']);
+  assert.equal(s.track.enabled, false, '마이크 트랙을 끈다');
+  assert.equal(reply.stopped, true, '튜터 목소리를 멈춘다');
+  s.micCtx.systemState('interrupted');
+  assert.deepEqual(s.events(m), ['systemPause'], '이미 멈췄으면 다시 알리지 않는다');
+
+  s.micCtx.systemState('running');
+  assert.deepEqual(s.events(m), ['systemPause'], '하나라도 아직 멈춰 있으면 기다린다');
+  s.hooks.systemResume = () => s.live.setPaused(false);
+  s.speaker.systemState('running');
+  assert.deepEqual(s.events(m), ['systemPause', 'systemResume']);
+  assert.equal(s.track.enabled, true);
+  s.speaker.systemState('running');
+  assert.deepEqual(s.events(m), ['systemPause', 'systemResume'], '한 번만 알린다');
+
+  s.waitFor('listening');
+  const before = s.sentAudio();
+  s.talk(3);
+  assert.equal(s.sentAudio(), before + 3, '이어 가면 다시 보낸다');
+  s.live.stop();
+});
+
+test('아이폰 전화·Siri: 가로채기가 끝나고 소리 처리가 suspended로 돌아와도 다시 켜고 이어 가라고 알린다', async (t) => {
+  const s = await greeted(t);
+  s.hooks.systemPause = () => s.live.setPaused(true);
+  const m = s.mark();
+  s.micCtx.systemState('interrupted');
+  s.speaker.systemState('interrupted');
+  assert.deepEqual(s.events(m), ['systemPause']);
+  const before = [s.micCtx.resumes, s.speaker.resumes];
+
+  s.micCtx.systemState('suspended');
+  assert.deepEqual(s.events(m), ['systemPause'], '하나라도 아직 가로채여 있으면 기다린다');
+  s.speaker.systemState('suspended');
+  assert.deepEqual(s.events(m), ['systemPause', 'systemResume']);
+  assert.deepEqual([s.micCtx.resumes, s.speaker.resumes], [before[0] + 1, before[1] + 1], 'suspended를 다시 켠다');
+  assert.equal(s.micCtx.state, 'running');
+  assert.equal(s.speaker.state, 'running');
+  s.live.stop();
+});
+
+test('직접 일시정지한 동안의 interrupted는 알리지 않고, 시스템이 되돌려도 저절로 이어 가지 않는다', async (t) => {
+  const s = await greeted(t);
+  s.live.setPaused(true);
+  const m = s.mark();
+  s.micCtx.systemState('interrupted');
+  s.speaker.systemState('interrupted');
+  s.micCtx.systemState('running');
+  s.speaker.systemState('running');
+  assert.deepEqual(s.events(m), []);
+  s.live.stop();
+  s.speaker.systemState('interrupted'); // 끝낸 뒤에는 아무것도 알리지 않는다
+  assert.deepEqual(s.events(m), []);
+});
+
+test('이어서 대화: 멈춰 있는(suspended·interrupted) 소리 처리를 다시 켜고, running이면 (크롬) 그대로 둔다', async (t) => {
+  const s = await greeted(t);
+  const before = [s.micCtx.resumes, s.speaker.resumes];
+  s.live.setPaused(true);
+  s.live.setPaused(false);
+  assert.deepEqual([s.micCtx.resumes, s.speaker.resumes], before, 'running이면 resume()을 부르지 않는다');
+
+  s.live.setPaused(true);
+  s.micCtx.state = 'suspended';
+  s.speaker.state = 'interrupted';
+  s.live.setPaused(false);
+  assert.deepEqual([s.micCtx.resumes, s.speaker.resumes], [before[0] + 1, before[1] + 1]);
+  assert.equal(s.micCtx.state, 'running');
+  assert.equal(s.speaker.state, 'running');
+  s.live.stop();
+});
+
+test('시스템이 마이크를 끊으면 (전화·권한 회수 등) 연결·소리를 정리하고 마이크 실패로 한 번 알린다', async (t) => {
+  const s = await greeted(t);
+  const ws = s.ws;
+  s.track.endBySystem();
+  assert.deepEqual(s.events().slice(-1), ['fail:mic']);
+  assert.equal(s.fails.at(-1).message, '마이크가 끊겼어요. 다시 시작하세요.');
+  assert.equal(ws.closedWith, 1000);
+  assert.ok(s.micCtx.closed && s.speaker.closed);
+  assert.equal(s.pending.size, 0);
+  s.track.endBySystem();
+  assert.equal(s.count('fail:mic'), 1, '한 번만 알린다');
 });
 
 /* ---------- 7. 끝내기 ---------- */

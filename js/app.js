@@ -1,8 +1,9 @@
 // 앱 시작: 화면 전환(해시 라우터), 공유받은 글 처리, 서비스 워커 등록
 
-import { h, toast } from './ui.js';
+import { h, toast, isIOS, inAppBrowser, isStandalone } from './ui.js';
 import { icon } from './icons.js';
-import { canInstall, promptInstall } from './install.js';
+import { canInstall, promptInstall, showIosInstallGuide } from './install.js';
+import { whenIdle } from './services/wake-lock.js';
 import { isLookupTerm, normalizeTerm } from './lib/lang.js';
 import * as tutor from './views/tutor.js';
 import * as dictionary from './views/dictionary.js';
@@ -99,14 +100,17 @@ function handleShareTarget() {
 
 function setupHeader() {
   const installBtn = document.getElementById('install-btn');
-  const sync = () => (installBtn.hidden = !canInstall());
-  installBtn.addEventListener('click', promptInstall);
+  // 아이폰은 설치 창이 없으므로, 아직 홈 화면 앱이 아니면 버튼을 보여 주고 누르면 추가하는 방법을 안내한다
+  const iosGuide = isIOS && !isStandalone() && !inAppBrowser;
+  const sync = () => (installBtn.hidden = !(canInstall() || iosGuide));
+  installBtn.addEventListener('click', () => (iosGuide && !canInstall() ? showIosInstallGuide() : promptInstall()));
   window.addEventListener('install-state', sync);
   sync();
   for (const a of document.querySelectorAll('[data-icon]')) a.prepend(icon(a.dataset.icon, { size: 22 }));
 }
 
 let userAskedUpdate = false;
+const UPDATE_CHECK_MS = 60 * 60 * 1000;
 
 function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return;
@@ -115,7 +119,10 @@ function registerServiceWorker() {
   navigator.serviceWorker
     .register('./sw.js')
     .then((reg) => {
-      const offer = (worker) => {
+      // 음성 대화·OTT 듣기·자막 따라가기 중에는 안내가 화면을 가리지 않게 그게 끝난 뒤에 띄운다
+      const offer = (worker) => whenIdle(() => showUpdateBar(worker));
+      const showUpdateBar = (worker) => {
+        document.querySelector('.update-bar')?.remove(); // 그사이 더 새 버전이 오면 안내를 바꿔 단다
         const bar = h(
           'div',
           { class: 'update-bar', role: 'status' },
@@ -142,6 +149,13 @@ function registerServiceWorker() {
           if (nw.state === 'installed' && navigator.serviceWorker.controller) offer(nw);
         });
       });
+      // 며칠씩 백그라운드에 머무는 앱도 새 버전을 알 수 있게, 화면에 돌아올 때 한 시간에 한 번만 확인한다
+      let lastCheck = Date.now();
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden || Date.now() - lastCheck < UPDATE_CHECK_MS) return;
+        lastCheck = Date.now();
+        reg.update().catch(() => {});
+      });
     })
     .catch((e) => console.warn('서비스 워커 등록 실패', e));
   // 처음 설치될 때(clients.claim)도 controllerchange가 오므로, 사용자가 "업데이트"를 눌렀을 때만 새로고침한다
@@ -153,6 +167,15 @@ function registerServiceWorker() {
   });
 }
 
+/** 저장 공간이 부족해도 단어장·키·자막이 지워지지 않게 "계속 보관"을 한 번 요청한다 (묻는 창 없이 브라우저가 정함) */
+function requestPersistentStorage() {
+  if (!navigator.storage?.persist) return;
+  navigator.storage
+    .persisted()
+    .then((p) => p || navigator.storage.persist())
+    .catch(() => {});
+}
+
 window.addEventListener('offline', () =>
   toast('오프라인입니다. 사전·번역·이미지는 인터넷이 필요합니다.', { ms: 4000 })
 );
@@ -162,3 +185,4 @@ handleShareTarget();
 setupHeader();
 route();
 registerServiceWorker();
+requestPersistentStorage();

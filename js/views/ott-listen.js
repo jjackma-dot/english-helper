@@ -2,7 +2,7 @@
 // 듣는 동안 마이크 소리는 이 기기 메모리에 최근 45초만 남기고 계속 지우며, 버튼을 누를 때만 그 구간을 Gemini로 보낸다.
 // 이어폰으로 볼 때는 마이크가 영상 소리를 못 들으므로, 들린 소리를 따라 말하거나 적으면 Gemini가 대사를 짐작한다.
 
-import { h, btn, iconBtn, clear, toast, errorMessage, segmented, field } from '../ui.js';
+import { h, btn, iconBtn, clear, toast, errorMessage, segmented, field, isIOS, browserHint } from '../ui.js';
 import { icon } from '../icons.js';
 import { getSettings, updateSettings, geminiEnabled, addWord } from '../store.js';
 import { recordingSupported, startRecording } from '../services/recorder.js';
@@ -136,16 +136,25 @@ function onVisibility() {
   else checkHealth();
 }
 
+// 아이폰은 분할 화면이 없고, 같은 휴대폰에서 듣기를 켜면 넷플릭스 소리가 멈출 수 있다 (다른 기기로 볼 때 쓴다).
+// 또 읽기·발음 소리 뒤에 마이크가 막힌 채로 남기도 한다
+const MIC_BLOCKED =
+  '마이크가 막혀 있어요. 통화·녹음 앱이 마이크를 쓰고 있는지 확인하세요.' +
+  (isIOS ? ' (읽기·발음 소리 뒤에 생기면 정지 후 다시 시작하세요)' : '');
+const WAS_HIDDEN = isIOS
+  ? '이 앱이 화면에서 사라지면 소리를 듣지 못할 수 있어요. 아이폰은 TV 등 다른 기기로 볼 때 이 화면을 켜 두고 쓰세요.'
+  : '이 앱이 화면에서 사라지면 소리를 듣지 못할 수 있어요. 분할 화면이나 넷플릭스 작은 창(PIP)으로 함께 띄워 두세요.';
+
 /** 듣기 상태 안내: 마이크 막힘 > 소리가 안 들림 > 화면에서 사라졌었음 */
 function checkHealth() {
   const msg = !listener
     ? ''
     : micLost || muted
-      ? '마이크가 막혀 있어요. 통화·녹음 앱이 마이크를 쓰고 있는지 확인하세요.'
+      ? MIC_BLOCKED
       : Date.now() - startedAt > 5000 && listener.level(5) < QUIET_RMS
         ? "마이크에 소리가 안 들려요 (볼륨을 키우거나 휴대폰을 스피커 가까이). 이어폰을 쓰는 중이면 아래 '들린 대로 말하기'를 쓰세요."
         : wasHidden
-          ? '이 앱이 화면에서 사라지면 소리를 듣지 못할 수 있어요. 분할 화면이나 넷플릭스 작은 창(PIP)으로 함께 띄워 두세요.'
+          ? WAS_HIDDEN
           : '';
   if (ui.warn.textContent !== msg) ui.warn.textContent = msg;
   ui.warn.hidden = !msg;
@@ -665,7 +674,7 @@ export function buildListenCard() {
     ui.warn,
     recordingSupported
       ? null
-      : h('p', { class: 'error-text' }, '이 브라우저는 마이크 듣기를 지원하지 않습니다. 안드로이드 크롬을 사용하세요.'),
+      : h('p', { class: 'error-text' }, `이 브라우저는 마이크 듣기를 지원하지 않습니다. ${browserHint()}`),
     h(
       'ul',
       { class: 'hint listen-about' },
@@ -675,18 +684,29 @@ export function buildListenCard() {
         h('b', null, '이어폰을 쓰면 마이크가 소리를 못 들어요.'),
         " 스피커로 듣거나, 아래 '들린 대로 말하기'·'적어서 묻기'를 쓰세요."
       ),
+      isIOS
+        ? h(
+            'li',
+            null,
+            h('b', null, '아이폰 실시간 자막'),
+            ': 설정 → 손쉬운 사용 → 실시간 자막을 켜고 언어를 English로 고르세요(기종·언어에 따라 없을 수 있어요). ',
+            '휴대폰에서 나오는 영상 소리에 자막을 달아 주고 이어폰을 써도 돼요.'
+          )
+        : h(
+            'li',
+            null,
+            h('b', null, '안드로이드 실시간 자막'),
+            '도 좋아요. 휴대폰에서 나오는 영상 소리에 자막을 달아 주고, 이어폰을 쓰거나 소리를 꺼도 됩니다. ',
+            "휴대폰 설정에서 '실시간 자막'을 검색해 켜세요(갤럭시는 볼륨 버튼을 누르면 나오는 창에서도 켤 수 있어요). ",
+            '안드로이드 10 이상 대부분의 휴대폰에 있지만 기종·앱마다 다를 수 있으니 내 휴대폰에서 확인해 보세요.'
+          ),
       h(
         'li',
         null,
-        h('b', null, '안드로이드 실시간 자막'),
-        '도 좋아요. 휴대폰에서 나오는 영상 소리에 자막을 달아 주고, 이어폰을 쓰거나 소리를 꺼도 됩니다. ',
-        "휴대폰 설정에서 '실시간 자막'을 검색해 켜세요(갤럭시는 볼륨 버튼을 누르면 나오는 창에서도 켤 수 있어요). ",
-        '안드로이드 10 이상 대부분의 휴대폰에 있지만 기종·앱마다 다를 수 있으니 내 휴대폰에서 확인해 보세요.'
-      ),
-      h(
-        'li',
-        null,
-        '이 앱이 화면에 떠 있어야 들을 수 있습니다. 휴대폰으로 볼 때는 분할 화면이나 넷플릭스 작은 창(PIP)으로 함께 띄우세요.'
+        '이 앱이 화면에 떠 있어야 들을 수 있습니다. ',
+        isIOS
+          ? "아이폰은 같은 휴대폰에서 넷플릭스를 틀고 듣기를 켜면 넷플릭스 소리가 멈출 수 있어요. TV 등 다른 기기로 볼 때 쓰고, 휴대폰으로 볼 때는 '들린 대로 말하기'·'적어서 묻기'를 쓰세요."
+          : '휴대폰으로 볼 때는 분할 화면이나 넷플릭스 작은 창(PIP)으로 함께 띄우세요.'
       ),
       h(
         'li',

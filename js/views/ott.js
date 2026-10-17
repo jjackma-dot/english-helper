@@ -4,7 +4,7 @@
 //      최근 N초 동안의 영어 대사를 해석·발음과 함께 보여준다.
 //    (넷플릭스·웨이브 앱은 다른 앱이 화면·재생·자막을 제어하거나 읽을 수 없다)
 
-import { h, btn, iconBtn, clear, toast, errorMessage, toggle, openSheet, field } from '../ui.js';
+import { h, btn, iconBtn, clear, toast, errorMessage, toggle, openSheet, field, isIOS } from '../ui.js';
 import { icon } from '../icons.js';
 import {
   getSettings,
@@ -257,11 +257,20 @@ function buildLibrary() {
           'li',
           null,
           h('b', null, '화면 배치: '),
-          'TV로 보면서 휴대폰으로 쓰거나, 안드로이드 ',
-          h('b', null, '분할 화면'),
-          '(최근 앱 → 앱 아이콘 → 분할 화면으로 열기) 또는 넷플릭스 ',
-          h('b', null, 'PIP(작은 창)'),
-          '로 함께 띄웁니다. 기기·앱에 따라 지원되지 않을 수 있습니다.'
+          // 아이폰은 분할 화면이 없다
+          isIOS
+            ? [
+                'TV로 보면서 휴대폰으로 쓰거나, 넷플릭스 ',
+                h('b', null, '작은 창(PIP)'),
+                '으로 함께 띄웁니다(광고형 요금제는 PIP 불가).',
+              ]
+            : [
+                'TV로 보면서 휴대폰으로 쓰거나, 안드로이드 ',
+                h('b', null, '분할 화면'),
+                '(최근 앱 → 앱 아이콘 → 분할 화면으로 열기) 또는 넷플릭스 ',
+                h('b', null, 'PIP(작은 창)'),
+                '로 함께 띄웁니다. 기기·앱에 따라 지원되지 않을 수 있습니다.',
+              ]
         ),
         h(
           'li',
@@ -486,7 +495,8 @@ function editTime() {
   const wasRunning = clock.running;
   const input = h('input', {
     type: 'text',
-    inputmode: 'decimal',
+    // 아이폰 숫자 자판에는 ':'가 없어 일반 자판을 쓴다 ('123' 자판에 ':'가 있다). 안드로이드는 그대로 숫자 자판
+    inputmode: isIOS ? null : 'decimal',
     value: formatClock(clock.time),
     'aria-label': '재생 시간',
   });
@@ -870,7 +880,9 @@ function buildTips() {
         'li',
         null,
         h('b', null, '휴대폰으로 보면서 이어폰을 쓸 때: '),
-        '안드로이드 실시간 자막(Live Caption)을 켜세요. 볼륨 버튼 → … → 실시간 자막. 앱에 따라 막힐 수 있습니다.'
+        isIOS
+          ? '아이폰 실시간 자막을 켜세요: 설정 → 손쉬운 사용 → 실시간 자막.'
+          : '안드로이드 실시간 자막(Live Caption)을 켜세요. 볼륨 버튼 → … → 실시간 자막. 앱에 따라 막힐 수 있습니다.'
       )
     )
   );

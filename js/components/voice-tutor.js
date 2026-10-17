@@ -3,11 +3,12 @@
 // 대화 중에는 카드가 머리글과 아래 탭 사이에 꼭 맞게 바뀌어 상태·대화·버튼이 모두 보이고, 대화 내용만 스크롤된다.
 // 대화 중이든 끝난 뒤든 대화 내용의 영어 단어를 길게 누르면 단어 뜻 시트가 열린다.
 
-import { h, btn, toast, toggle } from '../ui.js';
+import { h, btn, browserHint, toast, toggle } from '../ui.js';
 import { icon } from '../icons.js';
 import { getSettings, updateSettings, addWord } from '../store.js';
 import { buildVoiceTutorSystem } from '../lib/prompts.js';
 import { englishWordAt } from '../lib/lang.js';
+import { primeSpeech } from '../speech.js';
 import { apiKey } from '../services/gemini.js';
 import { liveBlocked, liveSupported, startLive } from '../services/live.js';
 import { fallbackSupported, startFallback } from '../services/voice-fallback.js';
@@ -192,6 +193,7 @@ export function createVoiceTutor({ getOptions }) {
   }
 
   function start() {
+    primeSpeech(); // 아이폰: 누른 순간에 기기 음성을 깨워 둬야 기본 음성 모드의 답을 읽을 수 있다
     const options = getOptions();
     if (!options || session) return;
     log.replaceChildren();
@@ -205,7 +207,7 @@ export function createVoiceTutor({ getOptions }) {
       showNotice(`${blocked || '이 브라우저는 Gemini Live 음성 처리를 지원하지 않습니다.'} ${BASIC_NOTE}`);
       begin('basic', options);
     } else {
-      showNotice('이 브라우저에서는 음성 대화를 할 수 없습니다. 안드로이드 크롬을 사용하세요.', true);
+      showNotice(`이 브라우저에서는 음성 대화를 할 수 없습니다. ${browserHint()}`, true);
       render();
       return;
     }
@@ -245,6 +247,9 @@ export function createVoiceTutor({ getOptions }) {
         setPaused(true);
         showNotice('한동안 말소리가 없어 잠시 멈췄습니다. "이어서 대화"를 누르면 다시 듣습니다.');
       },
+      // 아이폰: 전화·Siri 등이 소리를 가로채면 다른 앱으로 갔을 때처럼 잠시 멈추고, 시스템이 소리를 돌려주면 이어 간다
+      systemPause: autoPause,
+      systemResume: () => !document.hidden && autoResume(),
       fail: (info) => failed(kind, options, info),
     };
     session =

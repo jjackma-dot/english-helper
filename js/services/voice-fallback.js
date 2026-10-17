@@ -4,7 +4,7 @@
 
 import { generate, S } from './gemini.js';
 import { createListener, speak, stopSpeaking, sttSupported, ttsSupported } from '../speech.js';
-import { errorMessage } from '../ui.js';
+import { errorMessage, isIOS } from '../ui.js';
 import { FAST_MODEL } from '../lib/gemini-policy.js';
 import { START_TEXT, recentTurns, takeSentences } from '../lib/live-protocol.js';
 
@@ -60,6 +60,12 @@ export function startFallback({ system, on }) {
     onError: (msg, code) => (code === 'no-speech' ? on.idle() : fail(msg)),
   });
 
+  /**
+   * 기기 음성으로 읽기 전에 듣기를 끊는다 (그 뒤에 오는 인식 결과는 어차피 버린다).
+   * 아이폰은 abort()로 끊는다: stop()으로 멈춘 채 읽으면 다음 듣기가 아무 알림 없이 멈추기도 한다
+   */
+  const stopListening = () => (isIOS ? listener.abort() : listener.stop());
+
   function listen() {
     if (stopped || paused || busy) return;
     on.status('listening');
@@ -70,7 +76,7 @@ export function startFallback({ system, on }) {
     const text = heard;
     if (!text || busy || stopped || paused) return;
     heard = '';
-    listener.stop();
+    stopListening();
     on.interim('');
     on.userText(text);
     respond(text);
@@ -162,7 +168,7 @@ export function startFallback({ system, on }) {
       heard = '';
       on.interim('');
       dropTurn();
-      listener.stop();
+      stopListening(); // 멈춘 동안 단어 뜻 창의 발음을 읽을 수 있다
     },
     interrupt() {
       if (stopped || paused || !busy) return;

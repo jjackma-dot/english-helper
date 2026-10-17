@@ -1,7 +1,19 @@
 // 1) AI 영어회화 튜터: 앱 안에서 바로 하는 음성 대화(Gemini Live)와,
 //    요청문을 만들어 휴대폰의 ChatGPT·Gemini 앱으로 보내는 기능
 
-import { h, btn, toast, copyText, copyWithToast, shareText, isAndroid, segmented, field, toggle } from '../ui.js';
+import {
+  h,
+  btn,
+  toast,
+  copyText,
+  copyWithToast,
+  shareText,
+  isAndroid,
+  isIOS,
+  segmented,
+  field,
+  toggle,
+} from '../ui.js';
 import { icon } from '../icons.js';
 import { getSettings, updateSettings, listWords } from '../store.js';
 import {
@@ -17,6 +29,7 @@ import {
   getScenario,
 } from '../lib/prompts.js';
 import { createVoiceTutor } from '../components/voice-tutor.js';
+import { apiKey } from '../services/gemini.js';
 
 let state;
 let promptBox;
@@ -84,15 +97,24 @@ async function sendViaShare() {
 async function copyAndOpen() {
   const text = currentPrompt();
   if (!text) return;
-  const copied = await copyText(text);
   const label = AI_APPS[state.app].label;
-  toast(
-    copied
-      ? `요청문을 복사했습니다. ${label}에 요청문이 들어가지 않았으면 입력창을 길게 눌러 붙여넣으세요.`
-      : '복사하지 못했습니다. 미리보기의 글을 길게 눌러 직접 복사하세요.',
-    { ms: 5000 }
-  );
-  openApp(buildAppLaunchUrl(state.app, text, { android: isAndroid }));
+  const url = buildAppLaunchUrl(state.app, text, { android: isAndroid });
+  const tell = (copied) =>
+    toast(
+      copied
+        ? `요청문을 복사했습니다. ${label}에 요청문이 들어가지 않았으면 입력창을 길게 눌러 붙여넣으세요.`
+        : '복사하지 못했습니다. 미리보기의 글을 길게 눌러 직접 복사하세요.',
+      { ms: 5000 }
+    );
+  if (!isAndroid) {
+    // 아이폰 사파리 등은 기다린(await) 뒤에 새 창을 열면 막으므로, 복사를 시작만 해 두고 바로 연다
+    const copying = copyText(text);
+    openApp(url);
+    copying.then(tell);
+    return;
+  }
+  tell(await copyText(text));
+  openApp(url);
 }
 
 function openGeminiLive() {
@@ -159,6 +181,8 @@ export function init(root) {
   const openBtn = h('button', { class: 'btn', type: 'button', onclick: copyAndOpen }, icon('external'), openBtnLabel);
   openerText = h('p', { class: 'callout', lang: 'en' });
 
+  let hadKey = Boolean(apiKey()); // 키가 없으면 앱 안 음성 대화를 못 한다 (음성 튜터와 같은 기준)
+
   root.append(
     h(
       'div',
@@ -196,10 +220,11 @@ export function init(root) {
         '교정·정리는 한국어로, 대화는 영어로'
       )
     ),
-    // 앱 안 음성 대화가 주 기능이라 다른 앱으로 연습하는 방법은 접어 둔다 (누르면 펼쳐짐)
+    // 앱 안 음성 대화가 주 기능이라 다른 앱으로 연습하는 방법은 접어 둔다 (누르면 펼쳐짐).
+    // 아이폰은 키가 없으면 앱 안 대화를 할 수 없어 이것이 주 연습 방법이므로 펼쳐 둔다 (안드로이드는 예전처럼 접음)
     h(
       'details',
-      { class: 'card' },
+      { class: 'card', open: !hadKey },
       h('summary', null, icon('external'), ' 다른 앱으로 연습 (ChatGPT·Gemini 앱)'),
       h('div', { class: 'row between' }, h('h3', { class: 'card-title' }, icon('file'), '튜터 요청문'), regenBtn),
       field(
@@ -253,7 +278,9 @@ export function init(root) {
         'p',
         { class: 'hint' },
         h('b', null, 'ChatGPT 음성'),
-        ': 휴대폰 설정에서 기본 디지털 어시스턴트 앱을 ChatGPT로 바꿔 두면(한 번만), 전원(측면) 버튼을 길게 눌러 바로 음성 대화를 열 수 있습니다. 열리면 위 문장으로 시작하세요.'
+        isIOS
+          ? ': 아이폰 설정 → 동작 버튼에서 단축어(또는 제어)를 고른 뒤 ChatGPT의 음성 대화 기능을 고르면, 동작 버튼을 길게 눌러 바로 음성 대화를 열 수 있어요(ChatGPT 앱 필요, 메뉴 이름은 버전에 따라 다를 수 있음). 열리면 위 문장으로 시작하세요.'
+          : ': 휴대폰 설정에서 기본 디지털 어시스턴트 앱을 ChatGPT로 바꿔 두면(한 번만), 전원(측면) 버튼을 길게 눌러 바로 음성 대화를 열 수 있습니다. 열리면 위 문장으로 시작하세요.'
       )
     ),
     h(
@@ -287,6 +314,15 @@ export function init(root) {
   window.addEventListener('words-changed', () => {
     syncDependentUi();
     if (getScenario(state.scenario).words) regenerate();
+  });
+  // 키가 없는 기기(자녀 폰 등)는 앱 안 음성 대화를 못 하므로 "다른 앱으로 연습"을 펼쳐 둔다.
+  // 설정에서 키를 넣거나 지웠을 때만 다시 펼치거나 접는다 (그 밖에는 사용자가 둔 대로)
+  const otherApps = promptBox.closest('details');
+  window.addEventListener('settings-changed', () => {
+    const hasKey = Boolean(apiKey());
+    if (hasKey === hadKey) return;
+    hadKey = hasKey;
+    otherApps.open = !hasKey;
   });
 }
 

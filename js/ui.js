@@ -138,7 +138,23 @@ export async function shareText(text, title) {
   }
 }
 
-export const isAndroid = /Android/i.test(navigator.userAgent);
+const UA = navigator.userAgent;
+export const isAndroid = /Android/i.test(UA);
+// 아이폰·아이패드 (아이패드 사파리는 맥처럼 보이므로 터치 지원으로 구분한다). 아이폰의 모든 브라우저는 사파리 엔진(WebKit)
+export const isIOS = /iPhone|iPad|iPod/.test(UA) || (/Macintosh/.test(UA) && navigator.maxTouchPoints > 1);
+// 카카오톡·네이버·인스타그램 등 앱 안의 브라우저: 설치가 안 되고 저장소도 따로라 음성 인식·마이크가 막히기도 한다
+export const inAppBrowser = /KAKAOTALK|NAVER\(|Instagram|FBAN|FBAV|Line\//i.test(UA);
+
+/** 홈 화면에 설치한 앱으로 실행 중인지 (아이폰은 navigator.standalone) */
+export function isStandalone() {
+  return matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+}
+
+/** 이 브라우저에서 기능을 못 쓸 때 덧붙일 안내 (기기에 맞는 브라우저 이름) */
+export function browserHint() {
+  if (inAppBrowser) return '카카오톡 같은 앱 안의 브라우저 말고 메뉴의 "다른 브라우저로 열기"로 여세요.';
+  return isIOS ? '아이폰은 Safari로 여세요.' : '안드로이드 크롬을 사용하세요.';
+}
 
 export function externalLink(label, href, ico = 'external') {
   return h('a', { class: 'chip link', href, target: '_blank', rel: 'noopener noreferrer' }, label, icon(ico));

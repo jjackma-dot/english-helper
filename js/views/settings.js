@@ -1,12 +1,24 @@
 // 설정: Gemini 키, 무료 번역, 발음, 앱 설치·데이터 관리
 
-import { h, btn, clear, toast, field, toggle, errorMessage, externalLink } from '../ui.js';
+import {
+  h,
+  btn,
+  clear,
+  toast,
+  field,
+  toggle,
+  errorMessage,
+  externalLink,
+  isIOS,
+  inAppBrowser,
+  isStandalone,
+} from '../ui.js';
 import { icon } from '../icons.js';
 import { getSettings, updateSettings, clearAllData, DEFAULT_GEMINI_MODEL } from '../store.js';
 import { generate, listModels } from '../services/gemini.js';
 import { getVoices, speak, ttsSupported } from '../speech.js';
 import { VERSION } from '../version.js';
-import { canInstall, promptInstall } from '../install.js';
+import { canInstall, promptInstall, IOS_INSTALL_SHORT } from '../install.js';
 
 // 글로 답하지 않는 모델 (음성·이미지·영상 생성, 받아쓰기 전용 등): 고르면 사전·번역이 모두 실패한다
 const NOT_TEXT_MODEL = /embedding|aqa|image|tts|live|audio|transcribe|nano-banana|omni|robotics|veo|imagen|lyria/i;
@@ -112,8 +124,21 @@ function geminiSection() {
     h(
       'p',
       { class: 'hint' },
-      '키를 넣으면 앱 안에서 바로 하는 AI 음성 영어회화, AI 한영사전·예문, 더 자연스러운 번역, 녹음 받아쓰기, OTT 대사 해설을 쓸 수 있습니다. Google AI Studio에서 무료 등급 키를 발급받을 수 있으며, 무료 등급에서는 입력 내용(음성 대화 포함)이 Google의 서비스 개선에 쓰일 수 있습니다.'
+      '키를 넣으면 앱 안에서 바로 하는 AI 음성 영어회화, AI 한영사전·예문, 더 자연스러운 번역, 녹음 받아쓰기, OTT 대사 해설을 쓸 수 있습니다. Google AI Studio에서 무료 등급 키를 발급받을 수 있습니다.'
     ),
+    h(
+      'p',
+      { class: 'hint' },
+      'Gemini API 약관상 만 18세 이상만 쓸 수 있어요. 무료 등급에서는 입력 내용(음성 포함)이 Google의 서비스 개선에 쓰이고 Google 검토자가 볼 수도 있으니 민감한 내용은 넣지 마세요.'
+    ),
+    // 아이폰 Safari 탭은 7일 동안 열지 않으면 저장소가 지워질 수 있다 (홈 화면 앱은 예외)
+    isIOS && !isStandalone() && !inAppBrowser
+      ? h(
+          'p',
+          { class: 'callout warn' },
+          '아이폰 Safari 탭에서 쓰면 7일 넘게 열지 않을 때 키·단어장이 지워질 수 있어요. 홈 화면에 추가한 앱에서 쓰세요.'
+        )
+      : null,
     externalLink('Google AI Studio에서 키 발급', 'https://aistudio.google.com/apikey'),
     field('API 키', keyInput),
     h('label', { class: 'inline-check' }, showKey, ' 키 보기'),
@@ -142,8 +167,9 @@ function geminiSection() {
       'p',
       { class: 'hint' },
       icon('info', { size: 14 }),
-      ' 키는 이 기기의 브라우저 저장소에만 보관되고 Google API 호출에만 쓰입니다. 공용 기기에서는 넣지 마세요.'
-    )
+      ' 키·단어장·기록은 이 기기(브라우저)에만 저장돼요. 다른 기기(가족 휴대폰 등)에서는 그 기기에서 따로 넣어야 해요. 키는 Google API 호출에만 쓰이니 공용 기기에서는 넣지 마세요.'
+    ),
+    h('p', { class: 'hint' }, '같은 키(같은 Google 프로젝트)를 여러 기기에서 쓰면 하루 무료 한도를 함께 써요.')
   );
 }
 
@@ -201,10 +227,26 @@ function speechSection() {
     { class: 'card' },
     h('h3', { class: 'card-title' }, icon('volume'), '발음 듣기'),
     ttsSupported ? null : h('p', { class: 'error-text' }, '이 브라우저는 음성 읽기를 지원하지 않습니다.'),
-    field('영어 음성', voiceSelect, '휴대폰에 설치된 음성 엔진 목록입니다 (안드로이드: 설정 → 텍스트 음성 변환).'),
+    field(
+      '영어 음성',
+      voiceSelect,
+      isIOS
+        ? '휴대폰에 설치된 음성 목록입니다 (아이폰: 설정 → 손쉬운 사용 → 읽기 및 말하기 → 음성 → 영어에서 더 자연스러운 음성을 내려받을 수 있어요).'
+        : '휴대폰에 설치된 음성 엔진 목록입니다 (안드로이드: 설정 → 텍스트 음성 변환).'
+    ),
     field('읽기 속도', h('div', { class: 'row' }, rate, rateOut)),
     btn('들어보기', () => speak('Hello! Nice to meet you. How was your day?'), { cls: 'btn ghost', ico: 'volume' })
   );
+}
+
+/** 설치 버튼을 띄울 수 없을 때의 안내 (아이폰은 설치 창이 없고, 앱 안 브라우저는 설치가 안 됨) */
+function installHint() {
+  if (isStandalone()) return '앱으로 설치되어 실행 중입니다.';
+  if (inAppBrowser) {
+    return '카카오톡 같은 앱 안의 브라우저에서는 설치할 수 없어요. 메뉴의 "다른 브라우저로 열기"(아이폰은 Safari, 안드로이드는 크롬)로 여세요.';
+  }
+  if (isIOS) return IOS_INSTALL_SHORT;
+  return '크롬 메뉴(⋮) → "홈 화면에 추가" 또는 "앱 설치"를 누르면 앱처럼 쓸 수 있습니다.';
 }
 
 function appSection() {
@@ -213,13 +255,7 @@ function appSection() {
     clear(installBox).append(
       canInstall()
         ? btn('홈 화면에 앱 설치', promptInstall, { cls: 'btn primary', ico: 'download' })
-        : h(
-            'p',
-            { class: 'hint' },
-            matchMedia('(display-mode: standalone)').matches
-              ? '앱으로 설치되어 실행 중입니다.'
-              : '크롬 메뉴(⋮) → "홈 화면에 추가" 또는 "앱 설치"를 누르면 앱처럼 쓸 수 있습니다.'
-          )
+        : h('p', { class: 'hint' }, installHint())
     );
   };
   renderInstall();

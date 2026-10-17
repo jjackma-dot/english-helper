@@ -4,7 +4,7 @@
 // 연결은 약 10분마다 끊기므로 이어 말하기 정보(handle)로 자동으로 다시 연결한다.
 
 import { apiKey } from './gemini.js';
-import { getMic } from './recorder.js';
+import { getMic, releaseMic } from './recorder.js';
 import { nextPacificMidnight } from '../lib/gemini-policy.js';
 import {
   AUDIO_STREAM_END,
@@ -28,6 +28,7 @@ import {
 import { ECHO_AFTER_S, ECHO_BEFORE_S, createEchoGate, createFarTrack } from '../lib/barge-in.js';
 
 const BLOCK_KEY = 'eh.liveBlocked.v1';
+const MIC_ENDED = '마이크가 끊겼어요. 다시 시작하세요.';
 const ECHO_GUARD_MS = 300; // 튜터 목소리가 끝나고 마이크를 다시 열기까지 (내 목소리로 보이면 바로 연다)
 const BUTTON_GUARD_MS = 100; // "말 끊기" 버튼으로 멈춘 뒤 (말로 끊기를 쓸 수 없을 때) 남은 소리만 거르는 시간
 const STREAM_END_MS = 1000; // 마이크를 이만큼 보내지 않으면 서버에 알린다
@@ -125,6 +126,8 @@ function createPlayer(onPlaying) {
  *   on.correction({original, corrected, explanation_ko}), on.level(0~1),
  *   on.bargeIn(): 튜터가 말하는 중에 내 목소리가 들려 보내기 시작함 (이어지는 내 받아쓰기는 새 말풍선에),
  *   on.notice(message): 알릴 일 (말로 끊기가 자꾸 잘못 열려 이번 대화에서는 끔),
+ *   on.systemPause(): (아이폰) 전화·Siri 등이 소리를 가로챘다 → 대화를 멈춰 달라 (setPaused(true)),
+ *   on.systemResume(): 그렇게 멈춘 뒤 시스템이 소리를 되돌려 줬다 (이어 가도 됨),
  *   on.fail({kind, message}): Live로 계속할 수 없음 (마이크·연결은 이미 정리됨). kind 'mic'·'key'는 기본 음성 모드로도 안 됨
  * @returns {{stop: () => void, setPaused: (on: boolean) => void, setBargeIn: (on: boolean) => void, interrupt: () => void}}
  *   interrupt: "말 끊기" 버튼. 튜터가 말하는 중이 아니면 아무 일도 하지 않는다
@@ -156,6 +159,7 @@ export function startLive({ system, bargeIn = true, on }) {
   let prevTutorWords = ''; // 바로 전 답의 받아쓰기 (그 답의 남은 목소리가 아직 나오고 있을 수 있다)
   let gen = 0; // 튜터 답 번호 (새 답을 만들기 시작할 때마다 늘어남)
   let bargeGen = -1; // 말로 끊기가 마지막으로 열렸을 때 나오던 답 번호
+  let systemPaused = false; // 시스템이 소리를 가로채 멈추게 했다 (on.systemPause를 알림)
   const timers = { greet: 0, setup: 0, reconnect: 0, swap: 0, gate: 0 };
   const gate = createEchoGate({ enabled: bargeIn });
 
@@ -171,6 +175,26 @@ export function startLive({ system, bargeIn = true, on }) {
   });
   micCtx.resume().catch(() => {});
   player.ctx.resume().catch(() => {});
+  const contexts = [micCtx, player.ctx];
+
+  /**
+   * 아이폰: 전화·Siri·알람 등이 소리를 가로채면 AudioContext가 'interrupted'가 된다 (크롬에는 없음).
+   * 대화 중이면 멈추게 하고, 그렇게 멈춘 뒤 가로채기가 모두 끝나면 이어 가게 알린다.
+   * 가로채기가 끝나면 'running'이 아니라 'suspended'로 돌아오기도 해서(다른 앱이 소리를 넘겨주지 않음) 다시 켠다
+   */
+  function onContextState() {
+    if (stopped) return;
+    const interrupted = contexts.some((c) => c.state === 'interrupted');
+    if (!paused && interrupted) {
+      systemPaused = true;
+      on.systemPause?.();
+    } else if (systemPaused && paused && !interrupted) {
+      systemPaused = false;
+      for (const c of contexts) if (c.state === 'suspended') c.resume().catch(() => {});
+      on.systemResume?.();
+    }
+  }
+  for (const c of contexts) c.onstatechange = onContextState;
 
   const send = (msg) => {
     if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
@@ -417,7 +441,7 @@ export function startLive({ system, bargeIn = true, on }) {
     if (node) node.port.onmessage = null;
     source?.disconnect();
     node?.disconnect();
-    stream?.getTracks().forEach((t) => t.stop());
+    releaseMic(stream);
     player.flush();
     micCtx.close().catch(() => {});
     player.ctx.close().catch(() => {});
@@ -431,7 +455,11 @@ export function startLive({ system, bargeIn = true, on }) {
   (async () => {
     try {
       stream = await getMic();
-      if (stopped) return stream.getTracks().forEach((t) => t.stop());
+      if (stopped) return releaseMic(stream);
+      // 전화·다른 앱·권한 회수 등으로 마이크가 끊기면 더 들을 수 없다 (끝내기로 닫을 때는 'ended'가 오지 않는다)
+      stream.getAudioTracks()[0]?.addEventListener('ended', () => {
+        if (!stopped) fail({ kind: 'mic', message: MIC_ENDED });
+      });
       await micCtx.audioWorklet.addModule(new URL('../worklets/pcm16-capture.js', import.meta.url));
       if (stopped) return;
       source = micCtx.createMediaStreamSource(stream);
@@ -463,6 +491,12 @@ export function startLive({ system, bargeIn = true, on }) {
         gate.spoil();
         gate.reset();
         player.flush();
+      } else {
+        systemPaused = false;
+        // 아이폰: 전화·다른 앱 등으로 멈춘 소리 처리를 다시 켠다 (크롬은 늘 'running'이라 아무 일도 없다)
+        for (const c of contexts) {
+          if (c.state === 'suspended' || c.state === 'interrupted') c.resume().catch(() => {});
+        }
       }
       stream?.getTracks().forEach((t) => (t.enabled = !v));
     },

@@ -2,7 +2,7 @@
 // TV·휴대폰 스피커 소리를 그대로 들어야 하므로 통화용 소리 처리를 모두 끈다. 에코 제거를 켜면 안드로이드 크롬이
 // 통화 모드로 바뀌어 넷플릭스 소리를 줄이고, 휴대폰이 내는 소리를 메아리로 여겨 지워 버린다.
 
-import { openMic } from './recorder.js';
+import { openMic, playbackSession } from './recorder.js';
 import { downsample, encodeWav } from '../lib/wav.js';
 import { SampleRing, normalizePeak, rms } from '../lib/ring.js';
 
@@ -66,17 +66,30 @@ export async function startListening({ keepSeconds = 45, onLevel, onEnded, onMut
  * @returns {Promise<{stop: () => void, ended: Promise<void>}>}
  */
 export async function playClip(blob, { rate = 0.75 } = {}) {
+  const endSession = playbackSession(); // 아이폰: 무음 스위치를 켜 두어도 들리게 (마이크가 꺼져 있을 때)
   const ctx = new AudioContext();
   const src = ctx.createBufferSource();
   try {
     src.buffer = await ctx.decodeAudioData(await blob.arrayBuffer());
   } catch (e) {
+    endSession();
     ctx.close();
     throw e;
   }
   src.playbackRate.value = rate;
   src.connect(ctx.destination);
-  const ended = new Promise((resolve) => (src.onended = resolve)).then(() => ctx.close().catch(() => {}));
+  const ended = new Promise((resolve) => (src.onended = resolve)).then(() => {
+    endSession();
+    return ctx.close().catch(() => {});
+  });
   src.start();
-  return { stop: () => src.stop(), ended };
+  // 멈출 때도 세션을 돌려 둔다: 소리 처리가 멈춰 있으면(아이폰 전화 등) 끝 알림(onended)이 오지 않는다
+  const stop = () => {
+    try {
+      src.stop();
+    } finally {
+      endSession();
+    }
+  };
+  return { stop, ended };
 }
