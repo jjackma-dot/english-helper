@@ -22,6 +22,7 @@ const DEFAULT_SETTINGS = {
   ottListenSeconds: 20, // "방금 뭐라고?"로 보낼 최근 구간(초)
   autoSpeakTranslation: false,
   voiceBargeIn: true, // 음성 튜터 "말로 끊기": 튜터가 말하는 중에 내가 말하면 멈춘다 (스피커일 때는 메아리를 걸러 내 목소리만 알아챔)
+  voiceMediaVolume: true, // 음성 튜터 "미디어 음량으로 듣기"(안드로이드): 에코 제거를 끈 마이크로 들어 통화 모드가 되지 않게 (볼륨 버튼 = 미디어 음량)
   tutor: { ...DEFAULT_TUTOR_OPTIONS },
 };
 

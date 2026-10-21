@@ -289,7 +289,7 @@ function fakeSynth() {
 
 /* ---------- 마이크 ---------- */
 
-export const mic = { tracks: [], node: null };
+export const mic = { tracks: [], node: null, audio: [] }; // audio: getUserMedia에 준 오디오 조건 (부른 차례대로)
 
 class FakeTrack extends EventTarget {
   readyState = 'live';
@@ -376,7 +376,8 @@ export function installEnv({
   if (standalone && /iPhone/.test(userAgent)) nav.standalone = true;
   if (microphone) {
     nav.mediaDevices = {
-      getUserMedia: async () => {
+      getUserMedia: async ({ audio } = {}) => {
+        mic.audio.push(audio);
         const t = new FakeTrack();
         mic.tracks.push(t);
         return { getAudioTracks: () => [t], getTracks: () => [t] };

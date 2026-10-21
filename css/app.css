@@ -1438,7 +1438,7 @@ audio {
     height: calc(100dvh - env(safe-area-inset-top) - var(--tabbar-h) - env(safe-area-inset-bottom) - 16px);
     min-height: 220px;
   }
-  .voice-card.running :is(.card-title, .level, .toggle) {
+  .voice-card.running :is(.card-title, .level, .voice-toggles) {
     display: none;
   }
 }
@@ -1554,6 +1554,18 @@ audio {
   min-height: 56px;
   padding: 4px 6px;
   font-size: 0.9rem;
+}
+/* 말로 끊기·미디어 음량으로 듣기 스위치: 설명이 보일 때는 넓으면 두 칸, 좁으면 한 줄에 하나 */
+.voice-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+}
+.voice-toggles .toggle {
+  flex: 1 1 260px;
+}
+.voice-card.running .voice-toggles .toggle {
+  flex: 0 1 auto; /* 대화 중에는 이름만 보이므로 들어가면 한 줄에 */
 }
 
 /* ==== OTT 방금 뭐라고 ==== */

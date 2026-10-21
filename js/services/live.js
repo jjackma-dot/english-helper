@@ -2,9 +2,12 @@
 // 튜터 목소리가 나오는 동안(과 끝난 뒤 잠깐)은 마이크 소리를 붙잡아 두고, 내 목소리로 보일 때만 보내 튜터 말을 끊는다
 // (말로 끊기, lib/barge-in.js). 말로 끊기를 끄면 그동안 마이크를 보내지 않는다. "말 끊기" 버튼(interrupt)은 언제나 된다.
 // 연결은 약 10분마다 끊기므로 이어 말하기 정보(handle)로 자동으로 다시 연결한다.
+// 안드로이드에서 "미디어 음량으로 듣기"면 에코 제거를 끈 마이크를 써서 휴대폰이 통화 모드가 되지 않게 한다
+// (볼륨 버튼 = 미디어 음량, recorder.js MEDIA_VOICE_AUDIO). 일시정지하면 마이크를 닫았다가 이어 갈 때 다시 연다 (아이폰 빼고).
 
 import { apiKey } from './gemini.js';
-import { getMic, releaseMic } from './recorder.js';
+import { MEDIA_VOICE_AUDIO, VOICE_AUDIO, getMic, releaseMic } from './recorder.js';
+import { isAndroid, isIOS } from '../ui.js';
 import { nextPacificMidnight } from '../lib/gemini-policy.js';
 import {
   AUDIO_STREAM_END,
@@ -29,7 +32,15 @@ import { ECHO_AFTER_S, ECHO_BEFORE_S, createEchoGate, createFarTrack } from '../
 
 const BLOCK_KEY = 'eh.liveBlocked.v1';
 const MIC_ENDED = '마이크가 끊겼어요. 다시 시작하세요.';
+const MIC_REOPEN = '마이크를 다시 켜지 못했어요.';
 const ECHO_GUARD_MS = 300; // 튜터 목소리가 끝나고 마이크를 다시 열기까지 (내 목소리로 보이면 바로 연다)
+// 에코 제거 없이 들을 때(미디어 음량으로 듣기)는 튜터 목소리가 줄지 않고 마이크로 들어오므로, 출력·입력 지연에 더해
+// 스피커 소리의 방 울림이 잦아들 때까지 조금 더 기다린다 (남은 메아리를 서버가 내 말로 듣고 튜터가 자기 말에 대답하지 않게).
+// 기다리는 동안에도 말로 끊기 문이 내 목소리를 알아채면 바로 연다 (붙잡아 둔 앞부분부터 보냄)
+const RAW_ECHO_GUARD_MS = 500;
+// 일시정지하면 마이크를 닫는다: 다른 앱을 쓰는 동안 휴대폰이 통화 모드(볼륨 버튼 = 통화 음량)로 남지 않고 마이크 표시도 꺼진다.
+// 아이폰은 예전처럼 켜 둔 채 트랙만 끈다 (닫았다 열면 오디오 세션이 바뀌고, 마이크 권한을 다시 물을 수 있다)
+const CLOSE_MIC_ON_PAUSE = !isIOS;
 const BUTTON_GUARD_MS = 100; // "말 끊기" 버튼으로 멈춘 뒤 (말로 끊기를 쓸 수 없을 때) 남은 소리만 거르는 시간
 const STREAM_END_MS = 1000; // 마이크를 이만큼 보내지 않으면 서버에 알린다
 const GREETING_WAIT_MS = 8000; // 첫인사가 이만큼 늦으면 기다리지 않고 마이크를 연다
@@ -119,7 +130,9 @@ function createPlayer(onPlaying) {
 
 /**
  * Live 음성 대화를 시작한다. 소리를 내려면 사용자가 버튼을 누른 처리 안에서 바로 불러야 한다.
- * @param {{system: string, bargeIn?: boolean, on: object}} o bargeIn: 튜터가 말하는 중에 내 목소리가 들리면 보내서 말을 끊는다
+ * @param {{system: string, bargeIn?: boolean, mediaVolume?: boolean, on: object}} o
+ *   bargeIn: 튜터가 말하는 중에 내 목소리가 들리면 보내서 말을 끊는다,
+ *   mediaVolume: (안드로이드) 에코 제거를 끈 마이크로 들어 통화 모드가 되지 않게 한다 (아이폰·컴퓨터는 늘 에코 제거),
  *   on.status('connecting'|'thinking'|'listening'|'speaking'|'reconnecting'),
  *   on.userText(t)·on.tutorText(t): 받아쓰기 조각 (끊은 답의 나머지 글은 보내지 않는다),
  *   on.turnStart(): 튜터 목소리가 새로 나오기 시작함, on.turnEnd(), on.interrupted(): 튜터 말이 끊김 (목소리·버튼),
@@ -129,12 +142,17 @@ function createPlayer(onPlaying) {
  *   on.systemPause(): (아이폰) 전화·Siri 등이 소리를 가로챘다 → 대화를 멈춰 달라 (setPaused(true)),
  *   on.systemResume(): 그렇게 멈춘 뒤 시스템이 소리를 되돌려 줬다 (이어 가도 됨),
  *   on.fail({kind, message}): Live로 계속할 수 없음 (마이크·연결은 이미 정리됨). kind 'mic'·'key'는 기본 음성 모드로도 안 됨
- * @returns {{stop: () => void, setPaused: (on: boolean) => void, setBargeIn: (on: boolean) => void, interrupt: () => void}}
+ *   (일시정지 뒤 이어 갈 때 마이크를 다시 열지 못해도 'mic')
+ * @returns {{stop: () => void, setPaused: (on: boolean) => void, setBargeIn: (on: boolean) => void,
+ *   setMediaVolume: (on: boolean) => void, interrupt: () => void}}
  *   interrupt: "말 끊기" 버튼. 튜터가 말하는 중이 아니면 아무 일도 하지 않는다
  */
-export function startLive({ system, bargeIn = true, on }) {
+export function startLive({ system, bargeIn = true, mediaVolume = false, on }) {
   const key = apiKey();
-  let stream = null;
+  let stream = null; // 지금 연 마이크 (일시정지 동안은 닫혀 null, 아이폰 빼고)
+  let opening = null; // 마이크를 여는 중 (Promise<boolean>: 열어서 쓰기 시작함)
+  let micGen = 0; // 마이크를 열거나 닫을 때마다 늘어남: 그사이 닫거나 바꿨으면 늦게 열린 마이크는 바로 닫는다
+  let hadMic = false; // 마이크를 한 번이라도 열었음 (다시 열지 못했을 때의 안내)
   let source = null;
   let node = null;
   let ws = null;
@@ -163,13 +181,17 @@ export function startLive({ system, bargeIn = true, on }) {
   const timers = { greet: 0, setup: 0, reconnect: 0, swap: 0, gate: 0 };
   const gate = createEchoGate({ enabled: bargeIn });
 
+  /** 지금 쓸 마이크 조건: 안드로이드에서 미디어 음량으로 들으면 에코 제거를 끈다 */
+  const micAudio = () => (isAndroid && mediaVolume ? MEDIA_VOICE_AUDIO : VOICE_AUDIO);
+
   const micCtx = new AudioContext();
   const player = createPlayer((playing) => {
     if (stopped) return;
     if (!playing) {
-      gateUntil = performance.now() + ECHO_GUARD_MS;
+      const guard = micAudio().echoCancellation ? ECHO_GUARD_MS : RAW_ECHO_GUARD_MS;
+      gateUntil = performance.now() + guard;
       clearTimeout(timers.gate);
-      timers.gate = setTimeout(updateStatus, ECHO_GUARD_MS + 20);
+      timers.gate = setTimeout(updateStatus, guard + 20);
     }
     updateStatus();
   });
@@ -245,10 +267,76 @@ export function startLive({ system, bargeIn = true, on }) {
   /** 보내지 않은 조각: 마이크 막대를 비우고, 오래 보내지 않았으면 서버의 말소리 감지에 알린다 */
   function dropChunk() {
     on.level(0);
-    if (ready && !streamEnded && performance.now() - lastSentAt > STREAM_END_MS) {
-      send(AUDIO_STREAM_END);
-      streamEnded = true;
-    }
+    if (performance.now() - lastSentAt > STREAM_END_MS) endStream();
+  }
+
+  /** 마이크 소리가 끊겼다고 서버의 말소리 감지에 알린다 (보내던 중이었으면 한 번) */
+  function endStream() {
+    if (!ready || streamEnded) return;
+    send(AUDIO_STREAM_END);
+    streamEnded = true;
+  }
+
+  /**
+   * 지금 조건으로 마이크를 연다 (이미 열렸거나 여는 중이면 그대로). 그사이 닫거나 바꿨으면 늦게 열린 마이크는 바로 닫는다.
+   * 열 수 없으면 대화를 끝낸다 (kind 'mic': 기본 음성 모드로도 안 됨)
+   * @returns {Promise<boolean>|null} 여는 중이면 그 결과 (열어서 쓰기 시작했는지)
+   */
+  function micOn() {
+    if (stopped || stream || opening) return opening;
+    const my = ++micGen;
+    opening = getMic(micAudio()).then(
+      (s) => {
+        if (my !== micGen || stopped) {
+          releaseMic(s);
+          return false;
+        }
+        opening = null;
+        try {
+          useStream(s);
+        } catch (e) {
+          fail({ kind: 'unsupported', message: `음성 처리를 시작할 수 없습니다: ${e.message}` });
+          return false;
+        }
+        return true;
+      },
+      (e) => {
+        if (my !== micGen || stopped) return false;
+        opening = null;
+        fail({ kind: 'mic', message: hadMic ? `${MIC_REOPEN} ${e.message}` : e.message });
+        return false;
+      }
+    );
+    return opening;
+  }
+
+  function useStream(s) {
+    stream = s;
+    hadMic = true;
+    // 전화·다른 앱·권한 회수 등으로 마이크가 끊기면 더 들을 수 없다 (닫을 때(stop)는 'ended'가 오지 않는다)
+    s.getAudioTracks()[0]?.addEventListener('ended', () => {
+      if (!stopped && stream === s) fail({ kind: 'mic', message: MIC_ENDED });
+    });
+    if (paused) s.getTracks().forEach((t) => (t.enabled = false)); // (아이폰) 여는 사이에 멈췄다
+    plugMic();
+  }
+
+  /** 열린 마이크를 소리 처리기에 잇는다 (둘 다 준비됐을 때) */
+  function plugMic() {
+    if (!node || !stream || source) return;
+    source = micCtx.createMediaStreamSource(stream);
+    source.connect(node);
+  }
+
+  /** 마이크를 닫는다 (여는 중인 마이크도 열리는 대로 닫힌다) */
+  function micOff() {
+    micGen++;
+    opening = null;
+    source?.disconnect();
+    source = null;
+    const s = stream;
+    stream = null;
+    releaseMic(s);
   }
 
   /** 말로 끊기가 잘못 열렸음 ('miss'·'off'). 자꾸 그래서 이번 대화에서는 꺼졌으면 알린다 */
@@ -439,9 +527,8 @@ export function startLive({ system, bargeIn = true, on }) {
     ws = null;
     sock?.close(1000);
     if (node) node.port.onmessage = null;
-    source?.disconnect();
+    micOff();
     node?.disconnect();
-    releaseMic(stream);
     player.flush();
     micCtx.close().catch(() => {});
     player.ctx.close().catch(() => {});
@@ -453,38 +540,31 @@ export function startLive({ system, bargeIn = true, on }) {
   }
 
   (async () => {
+    // 마이크가 열린 뒤(권한 허용)에 연결한다. 마이크 권한 문제(kind 'mic')는 기본 음성 모드로도 해결되지 않는다.
+    // 여는 사이에 멈췄으면 그대로 이어서 준비하고(마이크는 이어 갈 때 연다), 조건을 바꿨으면 새로 여는 마이크를 기다린다
+    micOn();
+    while (opening && !stopped) await opening;
+    if (stopped) return;
     try {
-      stream = await getMic();
-      if (stopped) return releaseMic(stream);
-      // 전화·다른 앱·권한 회수 등으로 마이크가 끊기면 더 들을 수 없다 (끝내기로 닫을 때는 'ended'가 오지 않는다)
-      stream.getAudioTracks()[0]?.addEventListener('ended', () => {
-        if (!stopped) fail({ kind: 'mic', message: MIC_ENDED });
-      });
       await micCtx.audioWorklet.addModule(new URL('../worklets/pcm16-capture.js', import.meta.url));
       if (stopped) return;
-      source = micCtx.createMediaStreamSource(stream);
       node = new AudioWorkletNode(micCtx, 'pcm16-capture');
       const mute = micCtx.createGain();
       mute.gain.value = 0;
-      source.connect(node);
       node.connect(mute).connect(micCtx.destination); // 처리 그래프 유지용 (소리는 내지 않음)
       rate = Math.min(micCtx.sampleRate, MIC_RATE);
       node.port.onmessage = (e) => onChunk(e.data);
+      plugMic();
       connect();
     } catch (e) {
-      if (stopped) return;
-      // 마이크 권한 문제는 기본 음성 모드로도 해결되지 않는다
-      fail(
-        stream
-          ? { kind: 'unsupported', message: `음성 처리를 시작할 수 없습니다: ${e.message}` }
-          : { kind: 'mic', message: e.message }
-      );
+      if (!stopped) fail({ kind: 'unsupported', message: `음성 처리를 시작할 수 없습니다: ${e.message}` });
     }
   })();
 
   return {
     stop: cleanup,
     setPaused(v) {
+      if (stopped) return;
       paused = v;
       if (v) {
         if (generating) dropping = true; // 멈추기 전에 만들던 답은 이어서 들려주지 않는다
@@ -498,10 +578,34 @@ export function startLive({ system, bargeIn = true, on }) {
           if (c.state === 'suspended' || c.state === 'interrupted') c.resume().catch(() => {});
         }
       }
-      stream?.getTracks().forEach((t) => (t.enabled = !v));
+      if (!CLOSE_MIC_ON_PAUSE) {
+        stream?.getTracks().forEach((t) => (t.enabled = !v));
+      } else if (v) {
+        // 다른 앱을 쓰는 동안 통화 모드·마이크 표시가 남지 않게 닫는다 (더 보낼 소리가 없다고 서버에도 알린다)
+        micOff();
+        endStream();
+        on.level(0);
+      } else {
+        micOn(); // 지금 조건으로 다시 연다 (열지 못하면 fail 'mic')
+      }
     },
     setBargeIn(v) {
       gate.enabled = v;
+    },
+    /**
+     * (안드로이드) 미디어 음량으로 듣기를 바꾼다: 마이크를 새 조건으로 다시 열고, 메아리 크기는 처음부터 다시 배운다.
+     * 멈춰 있으면(마이크가 닫힘) 이어 갈 때 새 조건으로 연다. 아이폰·컴퓨터는 조건이 그대로라 아무 일도 없다
+     */
+    setMediaVolume(v) {
+      const before = micAudio();
+      mediaVolume = v;
+      if (stopped || micAudio() === before) return;
+      gate.forget(); // 에코 제거를 켜고 끄면 마이크로 들어오는 메아리 크기가 크게 달라진다
+      if (!stream && !opening) return;
+      // 옛 마이크를 먼저 닫는다: 에코 제거를 켠 마이크가 하나라도 열려 있으면 크롬이 통화 모드를 풀지 않는다
+      micOff();
+      endStream();
+      micOn();
     },
     interrupt() {
       // 튜터가 말하는 중이 아니거나 이미 끊은 답이면 아무것도 하지 않는다

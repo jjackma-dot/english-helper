@@ -3,7 +3,7 @@
 // 대화 중에는 카드가 머리글과 아래 탭 사이에 꼭 맞게 바뀌어 상태·대화·버튼이 모두 보이고, 대화 내용만 스크롤된다.
 // 대화 중이든 끝난 뒤든 대화 내용의 영어 단어를 길게 누르면 단어 뜻 시트가 열린다.
 
-import { h, btn, browserHint, toast, toggle } from '../ui.js';
+import { h, btn, browserHint, isAndroid, toast, toggle } from '../ui.js';
 import { icon } from '../icons.js';
 import { getSettings, updateSettings, addWord } from '../store.js';
 import { buildVoiceTutorSystem } from '../lib/prompts.js';
@@ -37,7 +37,7 @@ const WORD_TEXT = '.bubble, .fix-orig, .fix-new'; // 길게 눌러 단어를 찾
  * @returns {{el: HTMLElement, stop: () => void}} stop: 진행 중인 대화를 끝낸다 (다른 탭으로 갈 때)
  */
 export function createVoiceTutor({ getOptions }) {
-  let session = null; // 진행 중인 대화 {stop, setPaused, interrupt, setBargeIn?}
+  let session = null; // 진행 중인 대화 {stop, setPaused, interrupt, setBargeIn?, setMediaVolume?}
   let engine = '';
   let status = '';
   let paused = false;
@@ -135,6 +135,20 @@ export function createVoiceTutor({ getOptions }) {
     },
     '튜터가 말하는 중에 내가 말하면 튜터가 멈춥니다. 이어폰이 가장 확실하고, 스피커로도 됩니다(휴대폰마다 다름). 튜터가 저절로 자꾸 끊기면 끄고 "말 끊기" 버튼을 쓰세요.'
   );
+  // 안드로이드: 에코 제거를 끈 마이크로 들어 휴대폰이 통화 모드가 되지 않게 한다 (볼륨 버튼 = 미디어 음량).
+  // 기본 음성 모드는 크롬 음성 인식이 마이크를 다루므로 이 설정과 상관없다
+  const mediaToggle = isAndroid
+    ? toggle(
+        '미디어 음량으로 듣기',
+        getSettings().voiceMediaVolume,
+        (v) => {
+          updateSettings({ voiceMediaVolume: v });
+          session?.setMediaVolume?.(v);
+        },
+        '대화 중에도 볼륨 버튼이 미디어 음량을 바꿉니다. 휴대폰의 에코 제거를 쓰지 않아서 스피커로 크게 들으면 말로 끊기가 덜 민감할 수 있습니다. 튜터가 혼자 끊기거나 자기 말에 대답하면 끄세요.'
+      )
+    : null;
+  const toggles = h('div', { class: 'voice-toggles' }, bargeToggle, mediaToggle);
   const privacyHint = h(
     'p',
     { class: 'hint' },
@@ -155,7 +169,7 @@ export function createVoiceTutor({ getOptions }) {
     log,
     logHint,
     controls,
-    bargeToggle,
+    toggles,
     privacyHint
   );
 
@@ -171,7 +185,8 @@ export function createVoiceTutor({ getOptions }) {
     privacyHint.hidden = running;
     startBtn.hidden = running || !hasKey;
     keyBox.hidden = running || hasKey;
-    bargeToggle.hidden = !hasKey || (running && engine === 'basic'); // 기본 음성 모드는 버튼으로만 끊는다
+    // 기본 음성 모드는 버튼으로만 끊고, 마이크는 크롬 음성 인식이 다룬다
+    toggles.hidden = !hasKey || (running && engine === 'basic');
     statusRow.hidden = !running;
     controls.hidden = !running;
     levelBox.hidden = !running || engine !== 'live';
@@ -254,7 +269,12 @@ export function createVoiceTutor({ getOptions }) {
     };
     session =
       kind === 'live'
-        ? startLive({ system: buildVoiceTutorSystem(options), bargeIn: getSettings().voiceBargeIn, on })
+        ? startLive({
+            system: buildVoiceTutorSystem(options),
+            bargeIn: getSettings().voiceBargeIn,
+            mediaVolume: getSettings().voiceMediaVolume,
+            on,
+          })
         : startFallback({ system: buildVoiceTutorSystem(options, { live: false }), on });
     render();
   }

@@ -62,6 +62,13 @@ test('녹음: 파일 저장은 WAV 내려받기 링크', async () => {
   segment(tv, '녹음').click();
   button(tv, '녹음 시작').click();
   await until(() => mic.node, '마이크가 열린다');
+  // 통화 모드(볼륨 버튼 = 통화 음량)가 되지 않게 에코 제거만 끈다
+  assert.deepEqual(mic.audio.at(-1), {
+    channelCount: 1,
+    echoCancellation: false,
+    noiseSuppression: true,
+    autoGainControl: true,
+  });
   micChunk();
   button(tv, '누르면 정지').click();
   await until(() => descendants(tv).find((e) => e.tagName === 'A' && 'download' in e.attributes), '저장 링크가 나온다');
@@ -107,6 +114,19 @@ test('AI 회화: 키가 있으면 "다른 앱으로 연습"은 접혀 있고, �
   assert.equal(apps.open, false, '키와 상관없는 설정은 그대로 둔다');
   updateSettings({ geminiKey: 'k' });
   assert.equal(apps.open, false, '키를 넣으면 접는다');
+  // 안드로이드: "말로 끊기" 옆에 "미디어 음량으로 듣기" (기본 켬, 바꾸면 저장)
+  const media = descendants(view).find((e) => e.tagName === 'LABEL' && e.textContent.includes('미디어 음량으로 듣기'));
+  assert.ok(media, '미디어 음량으로 듣기 스위치');
+  assert.ok(text(view).includes('말로 끊기'));
+  const box = descendants(media).find((e) => e.tagName === 'INPUT');
+  assert.equal(box.checked, true, '기본은 켬');
+  box.checked = false;
+  box.dispatchEvent(new Event('change'));
+  const { getSettings } = await import('../js/store.js');
+  assert.equal(getSettings().voiceMediaVolume, false);
+  box.checked = true;
+  box.dispatchEvent(new Event('change'));
+  assert.equal(getSettings().voiceMediaVolume, true);
 
   location.href = '';
   button(view, '복사하고').click();

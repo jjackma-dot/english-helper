@@ -97,6 +97,7 @@ test('녹음: 파일 저장은 공유 시트로 WAV 파일을 보내고, 취소�
   segment(tv, '녹음').click();
   button(tv, '녹음 시작').click();
   await until(() => mic.node, '마이크가 열린다');
+  assert.equal(mic.audio.at(-1).echoCancellation, true, '아이폰은 예전처럼 에코 제거를 켠다');
   micChunk();
   button(tv, '누르면 정지').click();
   await until(() => button(tv, '파일 저장'), '저장 버튼이 나온다');
@@ -159,6 +160,8 @@ test('AI 회화: 키가 없으면 "다른 앱으로 연습"을 펼쳐 두고, �
   assert.equal(apps.open, false, '키와 상관없는 설정이 바뀌면 그대로 둔다');
   updateSettings({ geminiKey: 'k' });
   assert.equal(apps.open, false, '키를 넣으면 접는다');
+  assert.ok(text(view).includes('말로 끊기'));
+  assert.doesNotMatch(text(view), /미디어 음량으로 듣기/, '아이폰에는 없는 설정 (통화 모드 문제가 없다)');
   apps.open = true; // 사용자가 펼침
   updateSettings({ ttsRate: 1 });
   assert.equal(apps.open, true);

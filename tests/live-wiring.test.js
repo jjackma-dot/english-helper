@@ -1,5 +1,6 @@
-// js/services/live.js startLive()를 가짜 마이크·스피커·WebSocket으로 시험한다:
-// 첫인사, "말 끊기" 버튼, 남은 목소리 위로 새 답이 올 때, 말로 끊기(메아리 문), 다시 연결·옮겨 가기, 일시정지, 끝내기
+// js/services/live.js startLive()를 가짜 마이크·스피커·WebSocket으로 시험한다 (안드로이드 크롬):
+// 첫인사, "말 끊기" 버튼, 남은 목소리 위로 새 답이 올 때, 말로 끊기(메아리 문), 다시 연결·옮겨 가기, 일시정지(마이크 닫기),
+// 미디어 음량으로 듣기(에코 제거를 끈 마이크), 끝내기. 아이폰은 live-ios.test.js
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -29,7 +30,24 @@ performance.now = () => clock.ms;
 /** 시험 하나에서 만들어진 가짜 객체들 */
 const reg = {};
 function resetReg() {
-  Object.assign(reg, { sockets: [], contexts: [], nodes: [], tracks: [], mics: [], modules: [] });
+  // mics: getUserMedia 조건, liveAtOpen: 그때 열려 있던 마이크 수, sources: 마이크를 소리 처리에 이은 것
+  Object.assign(reg, { sockets: [], contexts: [], nodes: [], tracks: [], mics: [], liveAtOpen: [], sources: [], modules: [] });
+  Object.assign(micCtl, { held: null, fail: null });
+}
+
+/**
+ * 마이크 열기를 시험이 다룬다. held: 이 약속이 끝날 때까지 열기를 붙잡아 둔다 (권한 묻기·느린 기기),
+ * fail: 열기 실패 오류 이름 (NotAllowedError 등)
+ */
+const micCtl = { held: null, fail: null };
+/** 지금부터 여는 마이크를 붙잡아 둔다. 돌려준 함수를 부르면 모두 열린다 (micCtl.fail이면 실패) */
+function holdMic() {
+  let open;
+  micCtl.held = new Promise((r) => (open = r));
+  return () => {
+    micCtl.held = null;
+    open();
+  };
 }
 resetReg();
 
@@ -55,6 +73,9 @@ Object.defineProperty(globalThis, 'navigator', {
     mediaDevices: {
       getUserMedia: async ({ audio }) => {
         reg.mics.push(audio);
+        reg.liveAtOpen.push(reg.tracks.filter((x) => x.readyState === 'live').length);
+        if (micCtl.held) await micCtl.held;
+        if (micCtl.fail) throw Object.assign(new Error('mic'), { name: micCtl.fail });
         const t = new FakeTrack();
         reg.tracks.push(t);
         return { getTracks: () => [t], getAudioTracks: () => [t] };
@@ -134,9 +155,14 @@ class FakeAudioContext {
     this.state = state;
     this.onstatechange?.();
   }
+  /** 마이크 소리 (가장 최근 것이 this.mic). to: 이어 준 처리기 */
   createMediaStreamSource(stream) {
-    this.mic = { stream, disconnected: false, connect: (n) => n, disconnect: () => (this.mic.disconnected = true) };
-    return this.mic;
+    const mic = { stream, to: null, disconnected: false };
+    mic.connect = (n) => (mic.to = n);
+    mic.disconnect = () => (mic.disconnected = true);
+    reg.sources.push(mic);
+    this.mic = mic;
+    return mic;
   }
   createGain() {
     return { gain: { value: 1 }, connect: (n) => n, disconnect() {} };
@@ -270,9 +296,10 @@ function trackTimers() {
 
 /**
  * 대화를 시작한다 (마이크가 열리고 연결을 만들 때까지). 돌려준 객체로 시계를 돌리고, 마이크 조각과 서버 메시지를 넣는다
- * @param {{bargeIn?: boolean, stopAtOnce?: boolean}} o stopAtOnce: 마이크가 열리기 전에 바로 끝낸다
+ * @param {{bargeIn?: boolean, mediaVolume?: boolean, stopAtOnce?: boolean, holdMic?: boolean}} o
+ *   stopAtOnce: 마이크가 열리기 전에 바로 끝낸다, holdMic: 처음 마이크 열기를 붙잡아 둔다 (s.openMic()로 연다)
  */
-async function begin(t, { bargeIn = true, stopAtOnce = false } = {}) {
+async function begin(t, { bargeIn = true, mediaVolume, stopAtOnce = false, holdMic: hold = false } = {}) {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const pending = trackTimers();
   clock.ms = 0;
@@ -296,12 +323,15 @@ async function begin(t, { bargeIn = true, stopAtOnce = false } = {}) {
     fail: (c) => (fails.push(c), log.push(`fail:${c.kind}`)),
     level: (l) => levels.push(l),
   };
-  const live = startLive({ system: 'Be a friendly tutor.', bargeIn, on });
+  const openMic = hold ? holdMic() : null;
+  const live = startLive({ system: 'Be a friendly tutor.', bargeIn, mediaVolume, on });
   if (stopAtOnce) live.stop();
   await settle();
 
   const s = {
     live,
+    openMic,
+    echo: ECHO, // 튜터 소리가 나는 동안 조용한 학습자의 마이크에 들어오는 메아리 크기
     log,
     levels,
     fails,
@@ -357,13 +387,18 @@ async function begin(t, { bargeIn = true, stopAtOnce = false } = {}) {
         }
       }
     },
+    /** 마이크가 열려 소리 처리기에 이어져 있음 (닫혀 있으면 마이크 조각이 오지 않는다) */
+    get micOn() {
+      const mic = s.micCtx?.mic;
+      return Boolean(mic && mic.to === s.node && !mic.disconnected && mic.stream.getTracks()[0].readyState === 'live');
+    },
     /** 마이크 조각 n개 (40ms마다). level이 없으면 조용한 학습자 (튜터 소리가 나는 동안은 메아리만 들어온다) */
     frames(n, level) {
       let pcm;
       for (let i = 0; i < n; i++) {
         s.advance(40);
-        pcm = micPcm(level ?? (s.sounding().length ? ECHO : QUIET));
-        s.node?.port.onmessage?.({ data: pcm });
+        pcm = micPcm(level ?? (s.sounding().length ? s.echo : QUIET));
+        if (s.micOn) s.node.port.onmessage?.({ data: pcm });
       }
       return pcm;
     },
@@ -394,6 +429,11 @@ async function greeted(t, o) {
 }
 
 const LINE = 'Let me tell you about the mountains near Seoul.';
+
+/** 마이크 조건: 통화처럼 모두 켬 / 미디어 음량으로 듣기 (에코 제거만 끔) */
+const VOICE_AUDIO = { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true };
+const MEDIA_AUDIO = { channelCount: 1, echoCancellation: false, noiseSuppression: true, autoGainControl: true };
+const streamEnds = (s) => s.sent().filter((x) => JSON.stringify(x) === JSON.stringify(AUDIO_STREAM_END)).length;
 
 /* ---------- 1. 첫인사 ---------- */
 
@@ -839,7 +879,7 @@ test(
 
 /* ---------- 6. 일시정지 ---------- */
 
-test('일시정지: 마이크 트랙을 끄고, 멈추기 전 답과 멈춘 동안 시작된 답은 버리며, 다시 시작한 뒤의 새 답은 들려준다', async (t) => {
+test('일시정지: 마이크를 닫고, 멈추기 전 답과 멈춘 동안 시작된 답은 버리며, 다시 시작한 뒤의 새 답은 들려준다', async (t) => {
   const s = await greeted(t);
   s.talk(10);
   s.heard('Hello.');
@@ -851,7 +891,8 @@ test('일시정지: 마이크 트랙을 끄고, 멈추기 전 답과 멈춘 동�
   const m = s.mark();
 
   s.live.setPaused(true);
-  assert.equal(s.track.enabled, false);
+  assert.equal(s.track.readyState, 'ended', '마이크를 닫는다 (안드로이드가 통화 모드에서 나오고 마이크 표시도 꺼진다)');
+  assert.equal(s.micOn, false);
   assert.equal(reply.stopped, true);
   s.live.interrupt(); // 멈춘 동안 버튼은 아무 일도 하지 않는다
   s.audio(1000);
@@ -866,7 +907,8 @@ test('일시정지: 마이크 트랙을 끄고, 멈추기 전 답과 멈춘 동�
   s.audio(500);
   s.say('Are you there?');
   s.live.setPaused(false);
-  assert.equal(s.track.enabled, true);
+  await settle();
+  assert.equal(s.micOn, true, '마이크를 다시 연다');
   s.audio(500);
   s.say(' Hello?');
   assert.equal(s.sources().length, made, '버린 답은 틀지 않는다');
@@ -885,6 +927,7 @@ test('일시정지: 마이크 트랙을 끄고, 멈추기 전 답과 멈춘 동�
   s.live.stop();
 });
 
+// (이 파일의 기기는 안드로이드라 멈추면 마이크를 닫는다. 아이폰에서 트랙만 끄는 것은 live-ios.test.js)
 test('아이폰 전화·Siri: 소리 처리가 interrupted가 되면 멈춰 달라고 한 번 알리고, 시스템이 모두 되돌리면 이어 가라고 알린다', async (t) => {
   const s = await greeted(t);
   s.hooks.systemPause = () => s.live.setPaused(true); // 화면은 다른 앱으로 갈 때처럼 잠시 멈춘다
@@ -894,7 +937,7 @@ test('아이폰 전화·Siri: 소리 처리가 interrupted가 되면 멈춰 달�
 
   s.speaker.systemState('interrupted');
   assert.deepEqual(s.events(m), ['systemPause']);
-  assert.equal(s.track.enabled, false, '마이크 트랙을 끈다');
+  assert.equal(s.micOn, false, '마이크를 멈춘다');
   assert.equal(reply.stopped, true, '튜터 목소리를 멈춘다');
   s.micCtx.systemState('interrupted');
   assert.deepEqual(s.events(m), ['systemPause'], '이미 멈췄으면 다시 알리지 않는다');
@@ -904,7 +947,8 @@ test('아이폰 전화·Siri: 소리 처리가 interrupted가 되면 멈춰 달�
   s.hooks.systemResume = () => s.live.setPaused(false);
   s.speaker.systemState('running');
   assert.deepEqual(s.events(m), ['systemPause', 'systemResume']);
-  assert.equal(s.track.enabled, true);
+  await settle();
+  assert.equal(s.micOn, true);
   s.speaker.systemState('running');
   assert.deepEqual(s.events(m), ['systemPause', 'systemResume'], '한 번만 알린다');
 
@@ -978,7 +1022,225 @@ test('시스템이 마이크를 끊으면 (전화·권한 회수 등) 연결·�
   assert.equal(s.count('fail:mic'), 1, '한 번만 알린다');
 });
 
-/* ---------- 7. 끝내기 ---------- */
+/* ---------- 7. 미디어 음량으로 듣기 · 멈춘 동안 마이크 닫기 (안드로이드) ---------- */
+
+test('미디어 음량으로 듣기: 에코 제거만 끈 마이크로 듣고, 튜터 목소리가 끝나면 남은 울림까지 0.5초 기다린다', async (t) => {
+  const s = await begin(t, { mediaVolume: true });
+  assert.deepEqual(reg.mics, [MEDIA_AUDIO], '통화 모드가 되지 않게 에코 제거를 끈다 (잡음 제거·자동 음량은 켬)');
+  s.ws.accept();
+  s.deliver(msg.setupComplete());
+  s.audio(500);
+  const [hello] = s.sounding();
+  s.say('Hi! What did you do today?');
+  s.turnComplete();
+  s.waitFor('listening');
+  const firstAt = s.ws.sentAt[s.ws.sent.findIndex((x) => x.realtimeInput?.audio)];
+  const end = hello.end * 1000;
+  assert.ok(firstAt >= end + 500 && firstAt < end + 560, `목소리 끝 ${end}ms, 첫 조각 ${firstAt}ms`);
+  s.live.stop();
+});
+
+test('일시정지하면 마이크를 닫고 서버에 소리가 끊겼다고 알리며, 이어 가면 같은 조건으로 다시 열어 같은 처리기에 잇는다', async (t) => {
+  const s = await greeted(t, { mediaVolume: true });
+  const node = s.node;
+  const first = s.track;
+  s.talk(5);
+  const ends = streamEnds(s);
+  s.live.setPaused(true);
+  assert.equal(first.readyState, 'ended');
+  assert.equal(reg.sources[0].disconnected, true);
+  assert.equal(streamEnds(s), ends + 1, '더 보낼 소리가 없다고 바로 알린다');
+  assert.equal(s.levels.at(-1), 0, '마이크 막대를 비운다');
+  s.room(50);
+  assert.equal(streamEnds(s), ends + 1);
+
+  s.live.setPaused(false);
+  await settle();
+  assert.deepEqual(reg.mics, [MEDIA_AUDIO, MEDIA_AUDIO]);
+  assert.equal(reg.nodes.length, 1, '소리 처리기는 그대로 쓴다');
+  assert.equal(reg.sources.length, 2);
+  assert.equal(reg.sources[1].to, node);
+  assert.notEqual(s.track, first);
+  const before = s.sentAudio();
+  s.talk(3);
+  assert.equal(s.sentAudio(), before + 3);
+
+  first.endBySystem();
+  assert.equal(s.count('fail:mic'), 0, '닫은 옛 마이크의 늦은 알림은 무시한다');
+  s.track.endBySystem();
+  assert.deepEqual(s.events().slice(-1), ['fail:mic'], '다시 연 마이크가 끊겨도 알린다');
+});
+
+test('다시 여는 중에 또 멈추고 이어 가도 마이크는 하나만 열린다 (늦게 열린 옛 마이크는 바로 닫는다)', async (t) => {
+  const s = await greeted(t);
+  s.live.setPaused(true);
+  const open = holdMic(); // 느린 기기
+  s.live.setPaused(false);
+  s.live.setPaused(true);
+  s.live.setPaused(false);
+  s.live.setPaused(false); // 여는 중이면 또 열지 않는다
+  assert.equal(reg.mics.length, 3);
+  open();
+  await settle();
+  assert.deepEqual(
+    reg.tracks.map((x) => x.readyState),
+    ['ended', 'ended', 'live']
+  );
+  assert.equal(reg.sources.length, 2, '늦게 열린 옛 마이크는 잇지 않는다');
+  assert.equal(s.micOn, true);
+  assert.equal(s.count('fail:mic'), 0);
+  s.live.stop();
+});
+
+test('마이크를 다시 여는 중에 끝내면 늦게 열린 마이크를 닫고 아무것도 알리지 않는다', async (t) => {
+  const s = await greeted(t);
+  s.live.setPaused(true);
+  const open = holdMic();
+  s.live.setPaused(false);
+  const m = s.mark();
+  s.live.stop();
+  open();
+  await settle();
+  assert.equal(reg.tracks.at(-1).readyState, 'ended');
+  assert.equal(reg.sources.length, 1);
+  assert.deepEqual(s.log.slice(m), []);
+  assert.equal(s.pending.size, 0);
+});
+
+test('처음 마이크를 여는 중(권한 묻기)에 멈추면 열린 마이크는 바로 닫고 연결은 준비하며, 이어 갈 때 다시 연다', async (t) => {
+  const s = await begin(t, { holdMic: true });
+  assert.equal(reg.sockets.length, 0, '마이크가 열리기 전에는 연결하지 않는다');
+  s.live.setPaused(true);
+  s.openMic();
+  await settle();
+  assert.equal(reg.tracks[0].readyState, 'ended');
+  assert.equal(reg.sources.length, 0);
+  assert.equal(reg.sockets.length, 1);
+  s.live.setPaused(false);
+  await settle();
+  assert.equal(reg.mics.length, 2);
+  assert.equal(s.micOn, true);
+  s.live.stop();
+});
+
+test('처음 마이크를 여는 중에 미디어 음량으로 듣기를 바꾸면 새 조건의 마이크를 기다렸다가 연결한다', async (t) => {
+  const s = await begin(t, { holdMic: true });
+  s.live.setMediaVolume(true);
+  assert.deepEqual(reg.mics, [VOICE_AUDIO, MEDIA_AUDIO]);
+  s.openMic();
+  await settle();
+  assert.deepEqual(
+    reg.tracks.map((x) => x.readyState),
+    ['ended', 'live']
+  );
+  assert.equal(s.micOn, true);
+  assert.equal(reg.sockets.length, 1);
+  s.live.stop();
+});
+
+test('마이크를 열지 못하면: 처음에는 그 이유로, 이어 갈 때는 "다시 켜지 못했어요"로 알리고 모두 정리한다', async (t) => {
+  const s = await greeted(t);
+  const ws = s.ws;
+  s.live.setPaused(true);
+  micCtl.fail = 'NotReadableError'; // 다른 앱(통화 등)이 마이크를 쓰는 중
+  s.live.setPaused(false);
+  await settle();
+  assert.deepEqual(s.events().slice(-1), ['fail:mic']);
+  assert.equal(s.fails.at(-1).message, '마이크를 다시 켜지 못했어요. 다른 앱이 마이크를 쓰고 있어 열 수 없습니다.');
+  assert.equal(ws.closedWith, 1000);
+  assert.ok(s.micCtx.closed && s.speaker.closed);
+  assert.equal(s.pending.size, 0);
+  assert.equal(s.count('fail:mic'), 1);
+});
+
+test('처음 마이크를 열지 못하면 (권한 거부) 연결하지 않고 그 이유로 알린다', async (t) => {
+  const s = await begin(t, { holdMic: true });
+  micCtl.fail = 'NotAllowedError';
+  s.openMic();
+  await settle();
+  assert.deepEqual(s.events(), ['fail:mic']);
+  assert.match(s.fails[0].message, /^마이크 권한이 거부되었습니다/);
+  assert.equal(reg.sockets.length, 0);
+  assert.equal(s.pending.size, 0);
+});
+
+test('대화 중에 미디어 음량으로 듣기를 켜면: 옛 마이크를 먼저 닫고 새 조건으로 열며, 메아리 크기를 다시 배운다', async (t) => {
+  const s = await greeted(t); // 에코 제거를 켠 마이크로 시작해 첫인사에서 메아리(튜터 소리의 약 4%)를 배웠다
+  assert.deepEqual(reg.mics, [VOICE_AUDIO]);
+  const node = s.node;
+  const old = s.track;
+  s.live.setMediaVolume(true);
+  assert.equal(old.readyState, 'ended');
+  await settle();
+  assert.deepEqual(reg.mics, [VOICE_AUDIO, MEDIA_AUDIO]);
+  assert.equal(reg.liveAtOpen[1], 0, '에코 제거를 켠 마이크가 하나라도 열려 있으면 크롬이 통화 모드를 풀지 않는다');
+  assert.equal(reg.sources[1].to, node);
+  assert.equal(s.micOn, true);
+  s.live.setMediaVolume(true);
+  await settle();
+  assert.equal(reg.mics.length, 2, '그대로면 다시 열지 않는다');
+
+  // 에코 제거가 없으면 스피커 소리가 크게(튜터 소리의 절반쯤) 들어온다. 배운 4%로는 메아리에 열리므로 다시 배워야 한다
+  s.echo = 0.25;
+  s.talk(10);
+  s.heard('I went to Bukhansan.');
+  s.audio(3000);
+  s.say(LINE);
+  s.turnComplete();
+  const m = s.mark();
+  s.waitFor('listening');
+  s.room(3);
+  assert.deepEqual(s.events(m), [], '다시 배우는 동안에는 메아리로 말로 끊기가 열리지 않는다');
+
+  // 다시 배운 뒤: 보통 크기로 말해서는 열리지 않지만(덜 민감) 아주 크게 말하면 열린다. 버튼은 언제나 된다
+  s.talk(10);
+  s.heard('What is the tallest one?');
+  s.audio(3000);
+  s.say('Baegundae is the highest peak.');
+  s.turnComplete();
+  s.room(5);
+  const m2 = s.mark();
+  s.talk(8, LOUD);
+  assert.deepEqual(s.events(m2), []);
+  s.talk(8, 0.95);
+  assert.deepEqual(s.events(m2), ['bargeIn']);
+  s.live.interrupt();
+  assert.deepEqual(s.events(m2), ['bargeIn', 'interrupted']);
+  s.live.stop();
+});
+
+test('멈춘 동안 미디어 음량으로 듣기를 바꾸면 마이크는 닫힌 채로 두고, 이어 갈 때 새 조건으로 연다', async (t) => {
+  const s = await greeted(t, { mediaVolume: true });
+  s.live.setPaused(true);
+  s.live.setMediaVolume(false);
+  await settle();
+  assert.equal(reg.mics.length, 1);
+  assert.equal(s.micOn, false);
+  s.live.setPaused(false);
+  await settle();
+  assert.deepEqual(reg.mics, [MEDIA_AUDIO, VOICE_AUDIO]);
+  assert.equal(s.micOn, true);
+  s.live.stop();
+});
+
+test('미디어 음량을 바꿔 마이크를 다시 여는 중에 끝내면 늦게 열린 마이크를 닫는다', async (t) => {
+  const s = await greeted(t);
+  const open = holdMic();
+  s.live.setMediaVolume(true);
+  const m = s.mark();
+  s.live.stop();
+  open();
+  await settle();
+  assert.deepEqual(
+    reg.tracks.map((x) => x.readyState),
+    ['ended', 'ended']
+  );
+  assert.equal(reg.sources.length, 1);
+  assert.deepEqual(s.log.slice(m), []);
+  assert.equal(s.pending.size, 0);
+});
+
+/* ---------- 8. 끝내기 ---------- */
 
 test('끝내기: 예약해 둔 일을 모두 지우고 연결·마이크·소리를 닫으며, 그 뒤로는 아무것도 알리지 않는다', async (t) => {
   const s = await greeted(t);

@@ -282,9 +282,10 @@ test('들린 대로 말하기: 내 목소리용 마이크로 녹음하고, 다�
   assert.equal(sessionStorage.mem.get('eh.ottScene'), '프렌즈 시즌1', '장면 메모는 sessionStorage에');
 
   await startMimic();
+  // 안드로이드: 통화 모드(볼륨 버튼 = 통화 음량)가 되지 않게 에코 제거만 끈다
   assert.deepEqual(gumCalls.at(-1).audio, {
     channelCount: 1,
-    echoCancellation: true,
+    echoCancellation: false,
     noiseSuppression: true,
     autoGainControl: true,
   });
@@ -398,7 +399,7 @@ test('듣는 중이면 듣기를 먼저 끄고 녹음한다 (두 마이크를 �
 
   button('들린 대로 말하기').click();
   await startMimic();
-  assert.equal(gumCalls.at(-1).audio.echoCancellation, true);
+  assert.equal(gumCalls.at(-1).audio.noiseSuppression, true, '내 목소리용 마이크 (듣기는 소리 처리를 모두 끈다)');
   assert.equal(gumCalls.at(-1).liveBefore, 0, '듣던 마이크를 먼저 닫았다');
   assert.match(toastText(), /듣기를 끄고/);
   assert.ok(main().textContent.includes('듣기 시작'));

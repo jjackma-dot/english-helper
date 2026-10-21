@@ -235,6 +235,33 @@ test('첫인사처럼 보낼 수 없을 때도 observe로 메아리 크기를 �
   assert.ok(Math.abs(gate.k - 0.1) < 1e-9);
 });
 
+test('forget: 마이크가 바뀌면 배운 메아리 크기·깐깐함·버튼 전용을 버리고, 바뀐 차례로는 배우지 않으며 다음 조용한 차례에서 다시 배운다', () => {
+  const gate = createEchoGate();
+  silentTutorTurn(gate, { echo: 0.02 });
+  for (let i = 0; i < MAX_MISSES; i++) {
+    talkOver(gate, Math.ceil(SUSTAIN_MS / FRAME) + 1, { level: 0.4 });
+    assert.equal(gate.open, true);
+    clock += CONFIRM_MS;
+    gate.timeout(clock);
+  }
+  assert.equal(gate.buttonOnly, true);
+
+  talkOver(gate, 5, { level: 0.02 }); // 튜터 차례 중에 마이크가 바뀐다
+  gate.forget();
+  assert.equal(gate.k, null);
+  assert.equal(gate.margin, ECHO_MARGIN);
+  assert.equal(gate.misses, 0);
+  assert.equal(gate.buttonOnly, false);
+  assert.equal(gate.active, false, '다시 배우기 전에는 버튼으로만 끊는다');
+  talkOver(gate, 30, { level: 0.2 }); // 바뀐 뒤 같은 차례 (에코 제거 없이 커진 메아리)
+  gate.push(frame(), { level: 0.005, audible: false, now: (clock += FRAME) });
+  assert.equal(gate.k, null, '바뀌기 전후가 섞인 차례로는 배우지 않는다');
+
+  silentTutorTurn(gate, { echo: 0.1 });
+  assert.ok(Math.abs(gate.k - 0.2) < 1e-9, `k=${gate.k}`);
+  assert.equal(gate.active, true);
+});
+
 test('words·echoSimilarity·quantile', () => {
   assert.deepEqual(words("I'm FINE, thanks!"), ['i', 'am', 'fine', 'thanks'], '줄임말은 풀어서');
   assert.equal(echoSimilarity("what is your favorite season", "What's your favorite season?"), 1);

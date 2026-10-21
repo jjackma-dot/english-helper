@@ -1,12 +1,30 @@
 // 마이크 녹음 → 16kHz 모노 WAV (Gemini 받아쓰기와 재생·저장에 쓰기 좋은 형식)
 
 import { concatFloat32, downsample, encodeWav } from '../lib/wav.js';
-import { isIOS } from '../ui.js';
+import { isAndroid, isIOS } from '../ui.js';
 
 export const recordingSupported = Boolean(navigator.mediaDevices?.getUserMedia && window.AudioWorkletNode);
 
 /** 내 목소리용 (통화처럼 잡음·메아리 제거를 켠다) */
 export const VOICE_AUDIO = { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true };
+
+/**
+ * 내 목소리용, 에코 제거 없이 (잡음 제거·자동 음량만).
+ * 안드로이드 크롬은 에코 제거를 켠 마이크를 처음 열 때(휴대폰에 에코 제거 장치가 있으면) 휴대폰을 통화 모드
+ * (MODE_IN_COMMUNICATION)로 바꾼다. 그동안 볼륨 버튼은 통화 음량을 바꾸고, 소리도 통화처럼 나간다. 열린 마이크가
+ * 모두 닫혀야 돌아온다 (Chromium media/audio/android/audio_manager_android.cc, AudioManagerAndroid::MakeAudioInputStream).
+ * 에코 제거를 끄면 통화 모드로 바꾸지 않는다. 잡음 제거·자동 음량은 크롬이 직접 처리해서 상관없다.
+ * 휴대폰마다 다를 수 있다 (Chromium 버그 443255997)
+ */
+export const MEDIA_VOICE_AUDIO = {
+  channelCount: 1,
+  echoCancellation: false,
+  noiseSuppression: true,
+  autoGainControl: true,
+};
+
+/** 녹음(번역 녹음·들린 대로 말하기)용: 녹음하는 동안은 소리를 내지 않으므로 에코 제거가 필요 없다. 아이폰은 그대로 */
+const RECORD_AUDIO = isAndroid ? MEDIA_VOICE_AUDIO : VOICE_AUDIO;
 
 /* ---------- 아이폰 오디오 세션 (사파리 16.4+, 크롬에는 없음) ---------- */
 
@@ -133,7 +151,7 @@ export async function openMic(audio, onChunk) {
 export async function startRecording({ maxSeconds = 300, onLevel, onLimit } = {}) {
   const chunks = [];
   let samples = 0;
-  const mic = await openMic(VOICE_AUDIO, (data, rate) => {
+  const mic = await openMic(RECORD_AUDIO, (data, rate) => {
     chunks.push(data);
     samples += data.length;
     let peak = 0;

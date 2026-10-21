@@ -503,7 +503,7 @@ async function startMimic() {
   const g = guess;
   if (needKey(g.body)) return;
   if (listener || starting) {
-    // 통화용 처리를 끈 듣기와 켠 녹음, 두 마이크를 함께 열면 안드로이드에서 서로 끊긴다
+    // 소리 처리를 모두 끈 듣기와 내 목소리용 녹음, 두 마이크를 함께 열면 안드로이드에서 서로 끊긴다
     stopListener();
     toast('듣기를 끄고 내 목소리를 녹음합니다.');
   }
@@ -516,7 +516,7 @@ async function startMimic() {
   renderMimic();
   let r = null;
   try {
-    // 내 목소리이므로 통화처럼 잡음·메아리 제거를 켠다
+    // 내 목소리용 마이크 (잡음 제거·자동 음량. 안드로이드는 통화 모드가 되지 않게 에코 제거는 끈다)
     r = await startRecording({
       maxSeconds: MIMIC_SECONDS,
       onLevel: (peak) => {
