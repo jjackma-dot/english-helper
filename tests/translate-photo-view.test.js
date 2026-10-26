@@ -374,7 +374,7 @@ test('사진 칸: 카메라로 찍기(휴대폰 카메라 앱)와 사진 고르�
     els()
       .filter((e) => e.tagName === 'BUTTON' && e.dataset.value)
       .map((e) => e.textContent),
-    ['텍스트', '실시간 통역', '녹음', '사진']
+    ['카메라', '사진', '텍스트', '실시간 통역', '녹음']
   );
   segment('사진').click();
   assert.equal(segment('사진').getAttribute('aria-pressed'), 'true');

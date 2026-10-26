@@ -1,4 +1,5 @@
-// 3) 번역: 텍스트 번역, 실시간 음성 통역(문장 단위), 녹음 후 받아쓰기·번역(Gemini), 사진 속 글자 번역(Gemini)
+// 3) 번역: 카메라로 비추는 글자 실시간 번역(Gemini), 사진 속 글자 번역(Gemini), 텍스트 번역,
+// 실시간 음성 통역(문장 단위), 녹음 후 받아쓰기·번역(Gemini)
 
 import {
   h,
@@ -42,12 +43,13 @@ import { prepareImage, takeSharedPhoto } from '../services/photo-file.js';
 import { startRecording, recordingSupported } from '../services/recorder.js';
 import { speak, stopSpeaking, primeSpeech, createListener, listenOnce, sttSupported } from '../speech.js';
 import { tappableEnglish } from '../components/word-sheet.js';
+import { buildCameraPanel } from './translate-camera.js';
 
 const LABEL = { ko: '한국어', en: 'English' };
 const SPEECH_LANG = { ko: 'ko-KR', en: 'en-US' };
 
 let dir = { from: 'ko', to: 'en' };
-let mode = 'text';
+let mode = 'camera';
 let panels;
 let dirLabel;
 let modeSeg;
@@ -58,6 +60,8 @@ function showMode(m) {
   modeSeg.setValue(m);
   panels.live.stop();
   panels.record.stop();
+  if (m === 'camera') panels.camera.enter();
+  else panels.camera.leave();
   panelBox.replaceChildren(panels[m].el);
 }
 
@@ -1035,6 +1039,7 @@ function buildPhotoPanel({ onEdit, onSaved }) {
   return {
     el,
     takeShared,
+    usePhoto,
     /** 다른 탭으로 갈 때: 진행 중인 번역을 멈춘다 (돌아와서 다시 시도) */
     leave: () => {
       shown = false;
@@ -1064,19 +1069,28 @@ export function init(root) {
     },
     onSaved: () => panels.text.renderHistory(),
   });
+  panels.camera = buildCameraPanel({
+    // 카메라로 번역한 장면을 사진 번역으로 자세히 (표현 설명·단어장·기록)
+    onDetail: (file) => {
+      showMode('photo');
+      panels.photo.usePhoto(file);
+    },
+    tips: phoneTips,
+  });
   panelBox = h('div');
   modeSeg = segmented(
     [
+      { value: 'camera', label: '카메라' },
+      { value: 'photo', label: '사진' },
       { value: 'text', label: '텍스트' },
       { value: 'live', label: '실시간 통역' },
       { value: 'record', label: '녹음' },
-      { value: 'photo', label: '사진' },
     ],
     mode,
     showMode,
     { label: '번역 방식' }
   );
-  modeSeg.classList.add('modes'); // 4개가 좁은 화면에서도 한 줄에 들어가게 글자 길이만큼 나눈다
+  modeSeg.classList.add('modes'); // 5개가 좁은 화면에서도 한 줄에 들어가게 글자 길이만큼 나눈다
   root.append(
     h(
       'div',
@@ -1088,11 +1102,12 @@ export function init(root) {
     panelBox
   );
   setDir('ko', 'en');
-  showMode('text');
+  showMode(mode);
 }
 
 export function show(params) {
   panels.photo.back();
+  if (mode === 'camera') panels.camera.enter();
   if (params.get('photo') === 'shared') {
     // 다른 앱에서 공유한 사진 (sw.js가 받아 둠). 새로 고침해도 다시 꺼내지 않게 주소에서 지운다
     history.replaceState(null, '', `${location.pathname}#/translate`);
@@ -1109,9 +1124,10 @@ export function show(params) {
   }
 }
 
-/** 다른 탭으로 가면 마이크를 끄고 사진 번역 요청을 멈춘다 */
+/** 다른 탭으로 가면 마이크·카메라를 끄고 사진 번역 요청을 멈춘다 */
 export function hide() {
   panels?.live.stop();
   panels?.record.stop();
+  panels?.camera.leave();
   panels?.photo.leave();
 }

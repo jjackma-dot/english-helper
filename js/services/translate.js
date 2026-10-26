@@ -378,6 +378,69 @@ function photoSchema(task) {
   });
 }
 
+/* ---------- 카메라 실시간 번역: 카메라 화면 한 장면의 글자 읽기 + 번역 ---------- */
+
+// 사진 번역보다 빨리 답하도록 블록만 받는다 (무슨 사진인지·표현 설명은 "자세히"에서 사진 번역으로)
+const FRAME_TASK = {
+  transcript:
+    'This is one frame from a phone camera that is pointed at text right now (a menu, sign, label, notice, book page ' +
+    'or screen), so text at the edges may be cut off and some may be at an angle or blurry. Read the legible text in ' +
+    'natural reading order, focusing on what is in the middle of the frame, and group it into blocks: a paragraph, ' +
+    'a heading, a line, a menu item, a sign or a label. Copy each block exactly as written. Skip text that is cut off ' +
+    'at the edges, too small or too blurry to read; never guess or invent text. Translate each block: Korean text ' +
+    'into natural English, text in any other language (mostly English) into natural Korean. Keep names, prices and ' +
+    'numbers as they are. ',
+  gist:
+    'This is one frame from a phone camera pointed at text. Do NOT copy the text word for word. Group the legible ' +
+    'text into blocks in natural reading order. In text, write only a short label of a few words for each block in ' +
+    'its original language. In translation, write a natural translation or short summary in your own words: Korean ' +
+    'text into English, any other language into Korean. ',
+};
+
+const FRAME_END = 'If there is no readable text, return an empty blocks array.';
+
+function frameSchema(task) {
+  return S.obj({
+    blocks: S.arr(
+      S.obj({
+        lang: {
+          ...S.str('Language of this block: en = English, ko = Korean, other = any other language'),
+          enum: ['en', 'ko', 'other'],
+        },
+        text: S.str(PHOTO_TEXT[task]),
+        translation: S.str('Natural translation: Korean into English, any other language into Korean'),
+      }),
+      'Text blocks in natural reading order'
+    ),
+  });
+}
+
+/**
+ * 카메라 화면 한 장면의 글자를 읽어 블록마다 번역한다 (Gemini 필요). 사진 번역과 같은 블록 모양이지만
+ * 빨리 답하도록 블록만 받는다. 저작권 보호(RECITATION)로 막히면 한 번만 짧은 이름표와 요약을 받는다 (paraphrased).
+ * @param {Blob} frame JPEG
+ * @param {{signal?: AbortSignal, onPartial?: (partial: object) => void}} [o]
+ * @returns {Promise<{blocks: {lang: 'en'|'ko'|'other', text: string, translation: string}[], paraphrased: boolean}>}
+ */
+export async function translateFrame(frame, { signal, onPartial } = {}) {
+  const data = await blobToBase64(frame);
+  if (!data) throw new Error('카메라 화면을 읽지 못했습니다.');
+  return transcriptOrGist(
+    (task) => ({
+      system: PHOTO_SYSTEM,
+      parts: [
+        { inlineData: { mimeType: frame.type || 'image/jpeg', data } },
+        { text: FRAME_TASK[task] + PHOTO_LANG + FRAME_END },
+      ],
+      schema: frameSchema(task),
+      signal,
+      firstChunkMs: 20000,
+      timeoutMs: 45000,
+    }),
+    onPartial
+  );
+}
+
 /**
  * 사진 속 글자를 모두 읽어 블록마다 번역한다 (Gemini 필요). 한국어는 영어로, 다른 언어(주로 영어)는 한국어로.
  * 아주 긴 세로 캡처를 조각낸 사진(pieces)은 위에서부터 차례로 함께 보내고 한 장의 캡처라고 알린다.

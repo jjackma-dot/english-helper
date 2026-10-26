@@ -1719,3 +1719,75 @@ ul.photo-tips {
   margin: 4px 0 0;
   padding-left: 18px;
 }
+
+/* ==== 카메라 번역 (번역 탭 "카메라") ==== */
+
+.camera-card {
+  padding: 10px;
+  gap: 10px;
+}
+/* 카메라 화면: 칸(정사각형, 화면 높이의 절반 가까이까지)에 꽉 채워 보여 준다. 재고 보내는 것도 보이는 부분만 (services/camera.js) */
+.camera-frame {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  max-height: 46dvh;
+  background: #000;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  cursor: pointer;
+}
+.camera-video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.camera-status {
+  position: absolute;
+  left: 50%;
+  bottom: 8px;
+  transform: translateX(-50%);
+  max-width: calc(100% - 16px);
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: 0.9rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+.camera-status:empty {
+  display: none;
+}
+.camera-controls {
+  display: flex;
+  gap: 6px;
+}
+.camera-controls .btn {
+  flex: 1 1 0;
+  min-height: 48px;
+  padding: 4px 6px;
+}
+.camera-controls .btn.on {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+/* 이번 장면에서 글자를 못 찾아 그대로 둔 앞 장면의 번역 */
+.live-list.stale {
+  opacity: 0.6;
+}
+/* 작은 화면: 카메라를 조금 줄여 아래 번역이 더 보이게 (가로 화면은 높이가 낮아 조금 더 크게) */
+@media (max-height: 700px) {
+  .camera-frame {
+    max-height: 40dvh;
+  }
+}
+@media (max-height: 560px) {
+  .camera-frame {
+    max-height: 60dvh;
+  }
+}
