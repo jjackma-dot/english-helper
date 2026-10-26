@@ -34,8 +34,8 @@ const tutor = await import('../js/views/tutor.js');
 const tv = mount(translate, env.body);
 translate.show(new URLSearchParams());
 
-test('사진 번역: 갤러리에서 공유받기 안내와 갤럭시 기능 안내', () => {
-  segment(tv, '사진').click();
+test('스캔 번역: 갤러리에서 공유받기 안내와 갤럭시 기능 안내 (키가 없으면 카메라를 켜지 않는다)', () => {
+  segment(tv, '스캔').click();
   const t = text(tv);
   assert.match(t, /갤러리에서 공유 → English Helper로 보내도 됩니다\./);
   assert.match(t, /갤럭시 카메라: 글자를 비추면 나오는 T\(텍스트\) 버튼 → 번역/);

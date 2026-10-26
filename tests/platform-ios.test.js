@@ -43,8 +43,8 @@ const { updateSettings } = await import('../js/store.js');
 const tv = mount(translate, env.body);
 translate.show(new URLSearchParams());
 
-test('사진 번역: 공유받기 안내는 없고, 키 없이 쓰는 방법은 아이폰 기능으로 안내한다', () => {
-  segment(tv, '사진').click();
+test('스캔 번역: 공유받기 안내는 없고, 키 없이 쓰는 방법은 아이폰 기능으로 안내한다', () => {
+  segment(tv, '스캔').click();
   const t = text(tv);
   assert.doesNotMatch(t, /갤러리에서 공유/);
   assert.match(t, /아이폰 카메라: 글자를 비추면 나오는 텍스트 인식 버튼 → 번역/);

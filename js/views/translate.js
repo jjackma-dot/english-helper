@@ -1,10 +1,10 @@
-// 3) 번역: 카메라로 비추는 글자 실시간 번역(Gemini), 사진 속 글자 번역(Gemini), 텍스트 번역,
-// 실시간 음성 통역(문장 단위), 녹음 후 받아쓰기·번역(Gemini)
+// 3) 번역: 텍스트 번역, 스캔(카메라로 찍거나 고른 사진의 글자 번역 + 그 글에 대해 묻기, Gemini),
+// 실시간 음성 통역(문장 단위), 녹음 후 받아쓰기·번역(Gemini).
+// 번역 방향은 고르지 않는다: 한국어는 영어로, 영어는 한국어로 저절로 맞춘다
 
 import {
   h,
   btn,
-  iconBtn,
   clear,
   toast,
   copyWithToast,
@@ -12,7 +12,6 @@ import {
   segmented,
   toggle,
   field,
-  isAndroid,
   isIOS,
   isStandalone,
   browserHint,
@@ -29,39 +28,30 @@ import {
 } from '../store.js';
 import { detectLang } from '../lib/lang.js';
 import { formatClock } from '../lib/timefmt.js';
-import {
-  blockSides,
-  photoBlocks,
-  photoCopyText,
-  photoHistoryItem,
-  photoLang,
-  photoSourceText,
-  textDirection,
-} from '../lib/photo.js';
-import { translate, transcribeAndTranslate, translateImage } from '../services/translate.js';
-import { prepareImage, takeSharedPhoto } from '../services/photo-file.js';
+import { textDirection } from '../lib/photo.js';
+import { translate, transcribeAndTranslate } from '../services/translate.js';
 import { startRecording, recordingSupported } from '../services/recorder.js';
 import { speak, stopSpeaking, primeSpeech, createListener, listenOnce, sttSupported } from '../speech.js';
 import { tappableEnglish } from '../components/word-sheet.js';
-import { buildCameraPanel } from './translate-camera.js';
+import { buildScanPanel } from './translate-scan.js';
 
 const LABEL = { ko: '한국어', en: 'English' };
 const SPEECH_LANG = { ko: 'ko-KR', en: 'en-US' };
 
-let dir = { from: 'ko', to: 'en' };
-let mode = 'camera';
+let dir = { from: 'ko', to: 'en' }; // 텍스트 번역의 마지막 방향 (입력한 글의 언어로 저절로 맞춘다)
+let mode = 'text';
 let panels;
-let dirLabel;
 let modeSeg;
 let panelBox;
 
-function showMode(m) {
+/** @param {{camera?: boolean}} [o] camera: 스캔이면 바로 카메라를 켠다 (공유받은 사진을 번역할 때는 켜지 않는다) */
+function showMode(m, { camera = true } = {}) {
   mode = m;
   modeSeg.setValue(m);
   panels.live.stop();
   panels.record.stop();
-  if (m === 'camera') panels.camera.enter();
-  else panels.camera.leave();
+  if (m === 'scan') panels.scan.enter({ camera });
+  else panels.scan.leave();
   panelBox.replaceChildren(panels[m].el);
 }
 
@@ -112,10 +102,7 @@ function buildTextPanel() {
   const historyBox = h('div');
   let ctrl;
 
-  const setPlaceholder = () => {
-    src.placeholder = dir.from === 'ko' ? '번역할 한국어를 입력하세요' : 'Type English to translate';
-  };
-  setPlaceholder();
+  src.placeholder = '번역할 글을 입력하세요 (한국어 → English, English → 한국어)';
 
   async function run() {
     const text = src.value.trim();
@@ -176,7 +163,7 @@ function buildTextPanel() {
                   class: 'history-item',
                   onclick: () => {
                     primeAutoSpeak();
-                    // 사진 번역 기록은 from이 'other'(일본어 등)일 수 있다: 한국어가 아니면 영 → 한으로 다시 번역
+                    // 스캔 번역 기록은 from이 'other'(일본어 등)일 수 있다: 한국어가 아니면 영 → 한으로 다시 번역
                     const d = textDirection(it.from);
                     setDir(d.from, d.to);
                     src.value = it.source;
@@ -184,7 +171,7 @@ function buildTextPanel() {
                     window.scrollTo({ top: 0, behavior: 'smooth' });
                   },
                 },
-                h('span', { class: 'clip' }, it.photo ? h('span', { class: 'tag' }, '사진') : null, it.source),
+                h('span', { class: 'clip' }, it.photo ? h('span', { class: 'tag' }, '스캔') : null, it.source),
                 h('span', { class: 'clip muted' }, it.result)
               )
             )
@@ -195,30 +182,32 @@ function buildTextPanel() {
     );
   }
 
-  const micBtn = sttSupported
-    ? btn(
-        '말로 입력',
-        async () => {
-          primeAutoSpeak(); // 들은 말을 번역해 읽을 수 있다
-          micBtn.classList.add('recording');
-          try {
-            const said = await listenOnce(SPEECH_LANG[dir.from]);
-            if (said) {
-              src.value = (src.value.trim() ? `${src.value.trim()} ` : '') + said;
-              run();
-            } else toast('말소리를 듣지 못했습니다.');
-          } catch (e) {
-            toast(errorMessage(e));
-          } finally {
-            micBtn.classList.remove('recording');
-          }
-        },
-        { cls: 'btn', ico: 'mic' }
-      )
-    : null;
+  /** 말로 입력: 어느 말로 할지 고른다 (음성 인식은 언어를 알아야 한다). 들은 말의 언어로 방향을 맞춰 번역한다 */
+  const micBtn = (label, lang) => {
+    const b = btn(
+      label,
+      async () => {
+        primeAutoSpeak(); // 들은 말을 번역해 읽을 수 있다
+        b.classList.add('recording');
+        try {
+          const said = await listenOnce(SPEECH_LANG[lang]);
+          if (said) {
+            src.value = (src.value.trim() ? `${src.value.trim()} ` : '') + said;
+            run();
+          } else toast('말소리를 듣지 못했습니다.');
+        } catch (e) {
+          toast(errorMessage(e));
+        } finally {
+          b.classList.remove('recording');
+        }
+      },
+      { cls: 'btn', ico: 'mic' }
+    );
+    return b;
+  };
 
   /**
-   * 사진에서 읽은 글을 고쳐서 다시 번역할 수 있게 넣는다 (고칠 시간을 주려고 바로 번역하지는 않는다).
+   * 스캔한 사진에서 읽은 글을 고쳐서 다시 번역할 수 있게 넣는다 (고칠 시간을 주려고 바로 번역하지는 않는다).
    * 방향은 사진 글의 언어(lang)로 정한다: 한국어면 한 → 영, 그 밖(영어·일본어 등)은 영 → 한
    */
   function setText(text, lang) {
@@ -248,7 +237,8 @@ function buildTextPanel() {
       'div',
       { class: 'row wrap' },
       btn('번역하기', runByTap, { cls: 'btn primary', ico: 'globe' }),
-      micBtn,
+      sttSupported ? micBtn('한국어로 말하기', 'ko') : null,
+      sttSupported ? micBtn('Speak English', 'en') : null,
       btn(
         '지우기',
         () => {
@@ -262,7 +252,7 @@ function buildTextPanel() {
     out,
     historyBox
   );
-  return { el, onDirChange: setPlaceholder, setText, renderHistory };
+  return { el, setText, renderHistory };
 }
 
 /* ---------- 실시간 통역 ---------- */
@@ -613,19 +603,7 @@ function buildRecordPanel() {
   };
 }
 
-/* ---------- 사진 번역 ---------- */
-// 카메라로 찍거나 갤러리에서 고른(또는 다른 앱에서 공유받은) 사진의 글자를 Gemini가 읽어 블록마다 번역한다.
-// 사진은 번역할 때만 Gemini로 보내고 앱에 보관하지 않는다.
-
-const PHOTO_SOURCE = '사진 번역';
-const LEFT = 'left'; // 다른 화면으로 가서 멈춘 요청 (abort 이유)
-const SLOW_MS = 10000; // 이만큼 지나도 답이 오지 않으면 느린 인터넷 안내
-
-const list = (v) => (Array.isArray(v) ? v : []);
-
-function loadingLine(msg) {
-  return h('p', { class: 'muted loading' }, h('span', { class: 'spinner' }), msg);
-}
+/* ---------- 스캔 (카메라·사진) ---------- */
 
 /** 키 없이도 쓸 수 있는 휴대폰 기능 안내 (아이폰과 그 밖의 기기: 갤럭시 기준) */
 function phoneTips() {
@@ -654,435 +632,27 @@ function phoneTips() {
   );
 }
 
-/**
- * @param {{onEdit: (text: string, lang: 'en'|'ko'|'other') => void, onSaved: () => void}} o
- *   onEdit: 읽은 글자를 텍스트 번역 칸에 넣기 (lang: 사진 글의 언어, 번역 방향을 정한다),
- *   onSaved: 번역 기록에 넣은 뒤 (기록 목록 새로 그리기)
- */
-function buildPhotoPanel({ onEdit, onSaved }) {
-  let img = null; // 보낼 사진 (prepareImage 결과). 다시 시도는 이것을 그대로 다시 보낸다
-  let thumbUrl = '';
-  let ctrl = null; // 진행 중인 번역 요청
-  let job = 0; // 사진을 고르거나 닫을 때마다 늘려서, 그사이 늦게 끝난 준비를 버린다
-  let shown = true; // 번역 탭이 보이는 중인지 (다른 탭에 가 있으면 새로 보내지 않는다)
-  const out = h('div', { class: 'stack' });
-
-  const fileInput = (capture) => {
-    const input = h('input', {
-      type: 'file',
-      accept: 'image/*',
-      capture,
-      hidden: true,
-      onchange: () => {
-        const file = input.files?.[0];
-        input.value = ''; // 같은 사진을 다시 골라도 알 수 있게
-        if (file) usePhoto(file);
-      },
-    });
-    return input;
-  };
-  const camInput = fileInput('environment'); // 휴대폰 카메라 앱이 열린다
-  const pickInput = fileInput(null); // 갤러리·파일
-  const openCamera = () => camInput.click();
-  const openGallery = () => pickInput.click();
-
-  const picks = h(
-    'div',
-    { class: 'talk-row' },
-    h(
-      'button',
-      { type: 'button', class: 'talk-btn', onclick: openCamera },
-      icon('camera', { size: 28 }),
-      h('span', null, '카메라로 찍기')
-    ),
-    h(
-      'button',
-      { type: 'button', class: 'talk-btn', onclick: openGallery },
-      icon('image', { size: 28 }),
-      h('span', null, '사진 고르기')
-    )
-  );
-  const noPreview = h('p', { class: 'hint center', hidden: true }, '미리 볼 수 없는 형식이지만 번역은 됩니다.');
-  // 아주 긴 스크롤 캡처는 조각 수에 맞추느라 사진을 줄여 보낸다
-  const smallNote = h(
-    'p',
-    { class: 'hint', hidden: true },
-    '아주 긴 캡처라 사진을 줄여서 보내요. 글자가 작아 잘못 읽는 곳이 있을 수 있으니, 그러면 나눠서 캡처해 보세요.'
-  );
-  const thumb = h('img', {
-    class: 'photo-thumb',
-    alt: '번역할 사진',
-    onerror: () => {
-      // 크롬이 못 여는 HEIF 사진 등 (Gemini에는 원본을 그대로 보낸다)
-      thumb.hidden = true;
-      noPreview.hidden = false;
-    },
-  });
-  const photoCard = h(
-    'div',
-    { class: 'card photo-card', hidden: true },
-    h(
-      'div',
-      { class: 'photo-frame' },
-      thumb,
-      noPreview,
-      iconBtn('x', '사진 닫기', closePhoto, 'icon-btn small photo-close')
-    ),
-    smallNote,
-    h(
-      'div',
-      { class: 'row wrap' },
-      btn('다시 찍기', openCamera, { cls: 'chip', ico: 'camera' }),
-      btn('다른 사진', openGallery, { cls: 'chip', ico: 'image' })
-    )
-  );
-  const keyBox = h(
-    'div',
-    { class: 'callout stack' },
-    h('span', null, '사진 번역은 Gemini API 키가 있어야 합니다. ', h('a', { href: '#/settings' }, '설정에서 키 넣기')),
-    h('span', { class: 'hint' }, '키 없이도 휴대폰 기능으로 사진 속 글자를 번역할 수 있어요.'),
-    phoneTips()
-  );
-  const tips = h('details', null, h('summary', null, '휴대폰 기능으로도 번역할 수 있어요'), phoneTips());
-
-  function renderKey() {
-    const on = geminiEnabled();
-    keyBox.hidden = on;
-    tips.hidden = !on;
-  }
-
-  function showPhoto(p) {
-    if (thumbUrl) URL.revokeObjectURL(thumbUrl);
-    thumbUrl = p ? URL.createObjectURL(p.blob) : '';
-    if (thumbUrl) thumb.setAttribute('src', thumbUrl);
-    else thumb.removeAttribute('src');
-    thumb.hidden = false;
-    noPreview.hidden = true;
-    smallNote.hidden = !p?.small;
-    photoCard.hidden = !p;
-    picks.hidden = Boolean(p);
-  }
-
-  /** 진행 중인 요청을 멈춘다. 먼저 비워서 멈춘 요청이 화면을 다시 그리지 않게 한다 */
-  function stopRequest() {
-    const c = ctrl;
-    ctrl = null;
-    c?.abort();
-  }
-
-  function closePhoto() {
-    job++;
-    stopRequest();
-    img = null;
-    showPhoto(null);
-    clear(out);
-  }
-
-  async function usePhoto(file) {
-    const my = ++job;
-    stopRequest();
-    img = null;
-    clear(out).append(loadingLine('사진을 준비하는 중…'));
-    let p;
-    try {
-      p = await prepareImage(file);
-    } catch (e) {
-      if (my !== job) return;
-      showPhoto(null);
-      clear(out).append(h('p', { class: 'error-text' }, errorMessage(e)));
-      return;
-    }
-    if (my !== job) return; // 그사이 다른 사진을 골랐거나 닫았다
-    img = p;
-    showPhoto(p);
-    if (shown) run();
-    else stopped();
-  }
-
-  /** 다른 앱에서 공유받은 사진을 꺼내 번역한다 */
-  async function takeShared() {
-    const my = ++job;
-    stopRequest();
-    clear(out).append(loadingLine('공유받은 사진을 여는 중…'));
-    let file = null;
-    try {
-      file = await takeSharedPhoto();
-    } catch {
-      file = null;
-    }
-    if (my !== job) return;
-    if (file) usePhoto(file);
-    else clear(out).append(h('p', { class: 'error-text' }, '공유받은 사진을 찾지 못했습니다. 다시 공유해 주세요.'));
-  }
-
-  function stopped() {
-    clear(out).append(
-      h('p', { class: 'hint' }, '다른 화면으로 가서 멈췄어요.'),
-      btn('다시 시도', run, { cls: 'chip', ico: 'back' })
-    );
-  }
-
-  async function run() {
-    if (!img) return;
-    if (!geminiEnabled()) {
-      clear(out).append(
-        h(
-          'p',
-          { class: 'error-text' },
-          '사진 번역은 Gemini API 키가 있어야 합니다. ',
-          h('a', { href: '#/settings' }, '설정에서 키 넣기')
-        ),
-        btn('번역하기', run, { cls: 'chip', ico: 'globe' })
-      );
-      return;
-    }
-    stopRequest();
-    const c = new AbortController();
-    ctrl = c;
-    const image = img;
-    let frame = 0;
-    let latest = {};
-    let got = false;
-    let wait = '사진 속 글자를 읽고 번역하는 중…';
-    const draw = (r, done) => ctrl === c && clear(out).append(...photoResult(r, done, wait));
-    // 사진이 크고 인터넷이 느리면 보내는 데만 한참 걸린다
-    const slow = setTimeout(() => {
-      if (got) return;
-      wait = '사진을 보내는 중이에요. 인터넷이 느리면 조금 더 걸려요.';
-      draw(latest, false);
-    }, SLOW_MS);
-    draw(latest, false);
-    try {
-      const r = await translateImage(image, {
-        signal: c.signal,
-        onPartial: (p) => {
-          got = true;
-          latest = p;
-          // 조각이 자주 와도 화면은 프레임마다 한 번만 다시 그린다
-          frame ||= requestAnimationFrame(() => {
-            frame = 0;
-            draw(latest, false);
-          });
-        },
-      });
-      cancelAnimationFrame(frame);
-      if (ctrl !== c) return;
-      draw(r, true);
-      const item = photoHistoryItem(r);
-      if (item) {
-        pushTranslateHistory(item);
-        onSaved();
-      }
-    } catch (e) {
-      cancelAnimationFrame(frame);
-      if (ctrl !== c) return; // 닫았거나 다른 사진으로 바뀌었다
-      if (c.signal.reason === LEFT) stopped();
-      else if (e.name !== 'AbortError') {
-        clear(out).append(
-          h('p', { class: 'error-text' }, errorMessage(e)),
-          btn('다시 시도', run, { cls: 'chip', ico: 'back' })
-        );
-      }
-    } finally {
-      clearTimeout(slow);
-      if (ctrl === c) ctrl = null;
-    }
-  }
-
-  function photoResult(r, done, wait) {
-    const blocks = photoBlocks(r);
-    const phrases = list(r.phrases).filter((p) => p?.phrase);
-    return [
-      r.paraphrased
-        ? h('p', { class: 'hint' }, '저작권 보호 때문에 원문을 그대로 옮기지 않고 줄여서 보여 드려요.')
-        : null,
-      r.noteKo ? h('p', { class: 'photo-note' }, r.noteKo) : null,
-      blocks.length
-        ? h(
-            'ol',
-            { class: 'live-list' },
-            blocks.map((b, i) => blockView(b, done || i < blocks.length - 1, r.paraphrased))
-          )
-        : null,
-      done && !blocks.length && !r.noteKo
-        ? h('p', { class: 'muted' }, '사진에서 읽을 수 있는 글자를 찾지 못했어요.')
-        : null,
-      phrases.length ? phraseList(phrases, done) : null,
-      done ? null : loadingLine(blocks.length ? '이어서 받는 중…' : wait),
-      done && blocks.some((b) => englishParts(b, r.paraphrased).some(Boolean))
-        ? h('p', { class: 'hint' }, '영어 단어를 누르면 뜻을 볼 수 있습니다.')
-        : null,
-      done && blocks.length
-        ? h(
-            'div',
-            { class: 'row wrap' },
-            btn('전체 복사', () => copyWithToast(photoCopyText(r)), { cls: 'btn small ghost', ico: 'copy' }),
-            // 요약만 받았으면 고칠 원문이 없다
-            r.paraphrased
-              ? null
-              : btn('글자 고쳐서 다시 번역', () => onEdit(photoSourceText(r), photoLang(r)), {
-                  cls: 'btn small ghost',
-                  ico: 'edit',
-                })
-          )
-        : null,
-    ].filter(Boolean);
-  }
-
-  /**
-   * 블록에서 영어 단어를 누를 수 있게 보여 줄 곳: [원문, 번역]. 원문이 영어면 원문, 한국어면 번역(영어).
-   * 저작권 때문에 요약만 받았으면(paraphrased) 원문 자리는 짧은 이름표라 그냥 글자로 보여 준다
-   */
-  function englishParts(b, paraphrased) {
-    const { from } = blockSides(b);
-    return [from === 'en' && !paraphrased, from === 'ko' && Boolean(String(b.translation || '').trim())];
-  }
-
-  /**
-   * 블록 하나: 원문(영어는 단어를 누를 수 있게)과 번역. 다 받은 블록에만 버튼을 단다.
-   * 읽기·단어장 저장은 영어 쪽이 있을 때만 (일본어 등 다른 언어는 한국어 번역만 있다), 요약만 받았으면 복사만
-   */
-  function blockView(b, complete, paraphrased) {
-    const text = String(b.text || '').trim();
-    const tr = String(b.translation || '').trim();
-    const side = blockSides(b);
-    const [tapSrc, tapTr] = englishParts(b, paraphrased);
-    const english = (s, cls) => tappableEnglish(s, { source: PHOTO_SOURCE, tag: 'div', cls });
-    const en = paraphrased ? '' : side.en;
-    return h(
-      'li',
-      { class: `live-item photo-block from-${side.from === 'ko' ? 'ko' : 'en'}` },
-      tapSrc
-        ? english(text, 'photo-src')
-        : h('div', { class: 'photo-src', lang: side.from === 'other' ? null : side.from }, text),
-      tr ? (tapTr ? english(tr, 'photo-tr') : h('div', { class: 'photo-tr', lang: 'ko' }, tr)) : null,
-      complete
-        ? h(
-            'div',
-            { class: 'row wrap line-actions' },
-            en ? btn('읽기', () => speak(en), { cls: 'chip small', ico: 'volume' }) : null,
-            btn('복사', () => copyWithToast([text, tr].filter(Boolean).join('\n')), { cls: 'chip small', ico: 'copy' }),
-            en
-              ? btn(
-                  '단어장 저장',
-                  () => {
-                    addWord({ text: side.en, meaning: side.ko, type: 'sentence', source: PHOTO_SOURCE });
-                    toast('단어장에 저장했습니다');
-                  },
-                  { cls: 'chip small', ico: 'star' }
-                )
-              : null
-          )
-        : null
-    );
-  }
-
-  function phraseList(phrases, done) {
-    return h(
-      'div',
-      { class: 'stack tight' },
-      h('b', { class: 'small' }, '알아 두면 좋은 표현'),
-      h(
-        'ul',
-        { class: 'photo-phrases' },
-        phrases.map((p, i) => {
-          const complete = done || i < phrases.length - 1;
-          return h(
-            'li',
-            null,
-            h(
-              'div',
-              { class: 'grow' },
-              h('b', { lang: 'en' }, p.phrase),
-              p.meaningKo ? ` — ${p.meaningKo}` : null,
-              p.noteKo ? h('div', { class: 'muted small' }, p.noteKo) : null
-            ),
-            complete ? iconBtn('volume', '읽기', () => speak(p.phrase), 'icon-btn small') : null,
-            complete
-              ? btn(
-                  '저장',
-                  () => {
-                    addWord({ text: p.phrase, meaning: p.meaningKo, source: PHOTO_SOURCE });
-                    toast(`'${p.phrase}' 저장했습니다`);
-                  },
-                  { cls: 'chip small', ico: 'star' }
-                )
-              : null
-          );
-        })
-      )
-    );
-  }
-
-  window.addEventListener('settings-changed', renderKey);
-  renderKey();
-
-  const el = h(
-    'div',
-    { class: 'stack' },
-    h(
-      'p',
-      { class: 'hint' },
-      '메뉴판·안내문·책·화면 캡처처럼 사진 속 글자를 읽어 번역합니다 (영어 → 한국어, 한국어 → 영어). ',
-      // 다른 앱에서 공유받기는 안드로이드에서만 된다 (아이폰 사파리는 공유 대상 앱으로 등록할 수 없음)
-      isAndroid ? '갤러리에서 공유 → English Helper로 보내도 됩니다.' : null
-    ),
-    keyBox,
-    picks,
-    photoCard,
-    out,
-    h('p', { class: 'hint' }, '사진은 번역할 때만 Google Gemini로 보내고, 앱에는 보관하지 않습니다.'),
-    tips,
-    camInput,
-    pickInput
-  );
-  return {
-    el,
-    takeShared,
-    usePhoto,
-    /** 다른 탭으로 갈 때: 진행 중인 번역을 멈춘다 (돌아와서 다시 시도) */
-    leave: () => {
-      shown = false;
-      ctrl?.abort(LEFT);
-    },
-    back: () => {
-      shown = true;
-    },
-  };
-}
-
 /* ---------- 화면 ---------- */
 
 function setDir(from, to) {
   dir = { from, to };
-  dirLabel.replaceChildren(h('span', null, LABEL[from]), icon('send', { size: 16 }), h('span', null, LABEL[to]));
-  panels.text.onDirChange();
 }
 
 export function init(root) {
-  dirLabel = h('div', { class: 'dir-label' });
   panels = { text: buildTextPanel(), live: buildLivePanel(), record: buildRecordPanel() };
-  panels.photo = buildPhotoPanel({
+  panels.scan = buildScanPanel({
     onEdit: (text, lang) => {
       showMode('text');
       panels.text.setText(text, lang);
     },
     onSaved: () => panels.text.renderHistory(),
-  });
-  panels.camera = buildCameraPanel({
-    // 카메라로 번역한 장면을 사진 번역으로 자세히 (표현 설명·단어장·기록)
-    onDetail: (file) => {
-      showMode('photo');
-      panels.photo.usePhoto(file);
-    },
     tips: phoneTips,
   });
   panelBox = h('div');
   modeSeg = segmented(
     [
-      { value: 'camera', label: '카메라' },
-      { value: 'photo', label: '사진' },
       { value: 'text', label: '텍스트' },
+      { value: 'scan', label: '스캔' },
       { value: 'live', label: '실시간 통역' },
       { value: 'record', label: '녹음' },
     ],
@@ -1090,31 +660,20 @@ export function init(root) {
     showMode,
     { label: '번역 방식' }
   );
-  modeSeg.classList.add('modes'); // 5개가 좁은 화면에서도 한 줄에 들어가게 글자 길이만큼 나눈다
-  root.append(
-    h(
-      'div',
-      { class: 'dir-bar card' },
-      dirLabel,
-      iconBtn('swap', '번역 방향 바꾸기', () => setDir(dir.to, dir.from))
-    ),
-    modeSeg,
-    panelBox
-  );
-  setDir('ko', 'en');
+  modeSeg.classList.add('modes'); // 좁은 화면에서도 한 줄에 들어가게 글자 길이만큼 나눈다
+  root.append(modeSeg, panelBox);
   showMode(mode);
 }
 
 export function show(params) {
-  panels.photo.back();
-  if (mode === 'camera') panels.camera.enter();
   if (params.get('photo') === 'shared') {
     // 다른 앱에서 공유한 사진 (sw.js가 받아 둠). 새로 고침해도 다시 꺼내지 않게 주소에서 지운다
     history.replaceState(null, '', `${location.pathname}#/translate`);
-    showMode('photo');
-    panels.photo.takeShared();
+    showMode('scan', { camera: false });
+    panels.scan.takeShared();
     return;
   }
+  if (mode === 'scan') panels.scan.enter(); // 다른 탭에서 돌아옴: 카메라를 켜 두었으면 다시 켠다
   const text = params.get('text');
   if (text) {
     if (mode !== 'text') showMode('text');
@@ -1124,10 +683,9 @@ export function show(params) {
   }
 }
 
-/** 다른 탭으로 가면 마이크·카메라를 끄고 사진 번역 요청을 멈춘다 */
+/** 다른 탭으로 가면 마이크·카메라를 끄고 스캔 번역 요청을 멈춘다 */
 export function hide() {
   panels?.live.stop();
   panels?.record.stop();
-  panels?.camera.leave();
-  panels?.photo.leave();
+  panels?.scan.leave();
 }

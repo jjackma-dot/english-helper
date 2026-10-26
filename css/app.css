@@ -898,21 +898,6 @@ dialog.sheet::backdrop {
 
 /* ---------- 번역 ---------- */
 
-.dir-bar {
-  flex-direction: row;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 8px 8px 16px;
-}
-.dir-label {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-weight: 700;
-}
-.dir-label .ico {
-  color: var(--muted);
-}
 .src-text {
   font-size: 1.05rem;
 }
@@ -1647,91 +1632,20 @@ ul.listen-about {
   }
 }
 
-/* ==== 사진 번역 (번역 탭 "사진") ==== */
+/* ==== 스캔 번역 (번역 탭 "스캔") ==== */
 
-/* 번역 방식 4개: 칸을 글자 길이만큼 나눠 360px 화면에서도 한 줄에 들어가게 */
+/* 번역 방식: 칸을 글자 길이만큼 나눠 360px 화면에서도 한 줄에 들어가게 */
 .segmented.modes button {
   flex: 1 1 auto;
   line-height: 1.2;
 }
-.photo-card {
-  padding: 10px;
-  gap: 10px;
-}
-/* 사진은 잘리지 않게 다 보여 주고(object-fit: contain), 화면의 40%까지만 차지한다 */
-.photo-frame {
-  position: relative;
-  display: grid;
-  place-items: center;
-  min-height: 120px;
-  background: var(--surface-2);
-  border-radius: var(--radius-sm);
-  overflow: hidden;
-}
-.photo-thumb {
-  display: block;
-  max-width: 100%;
-  max-height: 40vh;
-  object-fit: contain;
-}
-.photo-frame > .hint {
-  padding: 24px 48px;
-}
-.photo-close {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  background: color-mix(in srgb, var(--surface) 85%, transparent);
-  color: var(--text);
-  box-shadow: var(--shadow);
-}
-.photo-note {
-  font-weight: 700;
-}
-/* 블록 하나: 원문 아래에 번역 (사진 속 줄바꿈을 그대로) */
-.photo-src,
-.photo-tr {
-  white-space: pre-wrap;
-  line-height: 1.55;
-}
-.photo-src {
-  font-size: 1.05rem;
-}
-.photo-tr {
-  background: var(--surface-2);
-  border-radius: var(--radius-sm);
-  padding: 6px 10px;
-}
-.photo-phrases {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.photo-phrases li {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-}
-ul.photo-tips {
-  margin: 4px 0 0;
-  padding-left: 18px;
-}
-
-/* ==== 카메라 번역 (번역 탭 "카메라") ==== */
-
-.camera-card {
-  padding: 10px;
-  gap: 10px;
-}
-/* 카메라 화면: 칸(정사각형, 화면 높이의 절반 가까이까지)에 꽉 채워 보여 준다. 재고 보내는 것도 보이는 부분만 (services/camera.js) */
+/* 카메라 화면: 칸에 꽉 채워 보여 준다(세로로 길게). 찍는 것도 보이는 부분만 (services/camera.js) */
 .camera-frame {
   position: relative;
   width: 100%;
-  aspect-ratio: 1 / 1;
-  max-height: 46dvh;
+  aspect-ratio: 3 / 4;
+  /* 아래 사진·카메라·멈춤 버튼까지 한 화면에 (머리글·번역 방식·버튼·아래 탭 약 300px) */
+  max-height: max(140px, min(60dvh, calc(100dvh - 300px)));
   background: #000;
   border-radius: var(--radius-sm);
   overflow: hidden;
@@ -1742,6 +1656,16 @@ ul.photo-tips {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+.camera-msg {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  color: #fff;
+  text-align: center;
+  line-height: 1.5;
 }
 .camera-status {
   position: absolute;
@@ -1762,32 +1686,114 @@ ul.photo-tips {
 .camera-status:empty {
   display: none;
 }
-.camera-controls {
+.camera-torch {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: rgba(0, 0, 0, 0.5);
+  color: #fff;
+}
+.camera-torch.on {
+  background: #fff;
+  color: #000;
+}
+/* 사진 · 카메라 · 멈춤: 좁은 화면에서도 한 줄에, 아이콘 아래 글자 */
+.scan-controls {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.scan-controls .btn {
+  flex-direction: column;
+  gap: 2px;
+  min-height: 60px;
+  padding: 6px;
+  font-size: 1rem;
+}
+.scan-card {
+  padding: 12px 14px;
+  gap: 8px;
+}
+.scan-head {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+}
+.scan-actions {
+  margin-left: auto;
+  gap: 4px;
+}
+/* 문장을 나누지 않고 사진 속 줄바꿈 그대로 */
+.scan-text {
+  white-space: pre-wrap;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+/* 번역본은 가장 크게 (맨 위에서 스크롤 없이 읽게) */
+.scan-tr {
+  border-color: color-mix(in srgb, var(--primary) 35%, var(--border));
+}
+.scan-tr .scan-text {
+  font-size: 1.15rem;
+}
+.photo-frame {
+  display: grid;
+  place-items: center;
+  min-height: 80px;
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.photo-thumb {
+  display: block;
+  max-width: 100%;
+  max-height: 40vh;
+  object-fit: contain;
+}
+.photo-frame > .hint {
+  padding: 24px 48px;
+}
+.scan-qa {
+  padding: 12px 14px;
+  gap: 10px;
+}
+.scan-qa-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.scan-qa-list:empty {
+  display: none;
+}
+.scan-q {
+  align-self: flex-end;
+  margin-left: 15%;
+  padding: 6px 12px;
+  border-radius: 14px;
+  background: var(--primary-soft);
+  color: var(--text);
+  white-space: pre-wrap;
+}
+.scan-qa-item {
+  display: flex;
+  flex-direction: column;
   gap: 6px;
 }
-.camera-controls .btn {
-  flex: 1 1 0;
-  min-height: 48px;
-  padding: 4px 6px;
+.scan-a {
+  white-space: pre-wrap;
+  line-height: 1.6;
 }
-.camera-controls .btn.on {
-  border-color: var(--primary);
-  background: var(--primary-soft);
-  color: var(--primary);
+.scan-ask {
+  gap: 8px;
 }
-/* 이번 장면에서 글자를 못 찾아 그대로 둔 앞 장면의 번역 */
-.live-list.stale {
-  opacity: 0.6;
+.scan-ask input {
+  min-width: 0;
 }
-/* 작은 화면: 카메라를 조금 줄여 아래 번역이 더 보이게 (가로 화면은 높이가 낮아 조금 더 크게) */
-@media (max-height: 700px) {
-  .camera-frame {
-    max-height: 40dvh;
-  }
-}
-@media (max-height: 560px) {
-  .camera-frame {
-    max-height: 60dvh;
-  }
+ul.photo-tips {
+  margin: 4px 0 0;
+  padding-left: 18px;
 }

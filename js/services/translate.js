@@ -308,168 +308,75 @@ export async function guessLine({ audio, text = '', scene = '' } = {}, { signal,
   }, onPartial);
 }
 
-/* ---------- 사진 번역: 사진 속 글자 읽기 + 번역 ---------- */
+/* ---------- 스캔 번역: 카메라로 찍거나 고른 사진의 글자를 모두 읽어 통째로 번역 + 그 글에 대해 묻기 ---------- */
 
-const PHOTO_SYSTEM =
-  'You help a Korean adult learner of English read text in photos: signs, menus, labels, notices, documents, ' +
-  'book pages and screenshots. Write all notes in natural, friendly Korean.';
+const SCAN_SYSTEM =
+  'You help a Korean adult learner of English read text in photos taken with a phone: signs, menus, labels, ' +
+  'notices, documents, book pages and screenshots. Write all notes in natural, friendly Korean.';
 
-const PHOTO_TASK = {
+const SCAN_TASK = {
   transcript:
-    'Read ALL legible text in this photo in natural reading order and group it into blocks: a paragraph, a heading, ' +
-    'a line, a menu item, a sign or a label. Copy each block exactly as written and keep meaningful line breaks ' +
-    'inside it. Never guess or invent text you cannot read: write [?] for unclear parts and skip text that is ' +
-    'completely unreadable. Translate each block: Korean text into natural English, text in any other language ' +
-    '(mostly English) into natural Korean. Keep names, prices and numbers as they are. ',
+    'Read ALL legible text in this photo in natural reading order. In original, copy it exactly as written, keeping ' +
+    'meaningful line breaks (one line per menu item, sign or label, a blank line between separate parts). Never guess ' +
+    'or invent text you cannot read: write [?] for unclear parts and skip text that is cut off at the edges or ' +
+    'completely unreadable. In translation, translate the WHOLE text as one natural, easy-to-read text with the same ' +
+    'line breaks: Korean text into natural English, text in any other language (mostly English) into natural Korean. ' +
+    'Keep names, prices and numbers as they are. ',
   gist:
-    'Do NOT copy the text word for word. Group the text in this photo into blocks in natural reading order ' +
-    '(a paragraph, a heading, a menu item, a sign or a label). In text, write only a short label of a few words ' +
-    'for each block in its original language (such as its heading or first words). In translation, write a natural ' +
-    'translation or short summary in your own words: Korean text into English, any other language into Korean. ',
+    'Do NOT copy the text word for word. In original, write only short labels of a few words for each part of the ' +
+    'text in its original language (such as its heading or first words), one per line. In translation, write a ' +
+    'natural translation or short summary of the whole text in your own words: Korean text into English, any other ' +
+    'language into Korean. ',
 };
 
-// 블록마다 언어를 먼저 받아, 영어 블록에만 단어 누르기·읽기·단어장 저장을 단다
-const PHOTO_LANG =
-  'For each block, first set lang to the language of its original text: en for English, ko for Korean, other for ' +
-  'any other language (for example Japanese, Chinese, Vietnamese or French), even if that block also contains some ' +
-  'Latin letters or English words such as OPEN. If the same text appears in two languages side by side (for example ' +
-  '출구 Exit), make a separate block for each language. ';
-
 /** 아주 긴 세로 캡처를 조각내 보낼 때 (조각 수) */
-const PHOTO_PARTS = (n) =>
+const SCAN_PARTS = (n) =>
   `These ${n} images are consecutive parts of ONE long screenshot, in order from top to bottom. ` +
   'Neighbouring parts overlap by a few lines: read those duplicated lines only once. ' +
   'Treat all parts together as one photo. ';
 
-const PHOTO_END =
-  'In phrases, pick 0–5 useful English expressions from the text for a Korean learner, with Korean meanings and ' +
-  'short Korean notes (none if there is no English text). In noteKo, say in one short Korean sentence what the ' +
-  'photo is (for example 식당 메뉴판). If there is no readable text, return an empty blocks array and say so in noteKo.';
+const SCAN_END =
+  'Set sourceLang to the main language of the text: en for English, ko for Korean, mixed if Korean and another ' +
+  'language are both substantial, other for any other language (for example Japanese, Chinese, Vietnamese or French), ' +
+  'none if there is no readable text. If there is no readable text, leave original and translation empty.';
 
-const PHOTO_TEXT = {
-  transcript: 'Block text exactly as written, keeping meaningful line breaks; [?] for unclear parts',
-  gist: 'Short label of a few words for the block in its original language (not the full text)',
-};
-
-// noteKo(무슨 사진인지)를 먼저 받고, 블록을 읽는 순서대로 받아 바로 보여 준다. 블록은 언어(lang)가 맨 먼저 온다
-function photoSchema(task) {
-  return S.obj({
-    noteKo: S.str('One short Korean sentence: what the photo is, or that there is no readable text'),
-    blocks: S.arr(
-      S.obj({
-        lang: {
-          ...S.str('Language of this block: en = English, ko = Korean, other = any other language'),
-          enum: ['en', 'ko', 'other'],
-        },
-        text: S.str(PHOTO_TEXT[task]),
-        translation: S.str('Natural translation: Korean into English, any other language into Korean'),
-      }),
-      'Text blocks in natural reading order'
-    ),
-    phrases: S.arr(
-      S.obj({
-        phrase: S.str('English expression from the text'),
-        meaningKo: S.str('Korean meaning'),
-        noteKo: S.str('Short Korean note on usage'),
-      }),
-      '0–5 useful English expressions for a Korean learner'
-    ),
-    sourceLang: { ...S.str('Main language of the text in the photo'), enum: ['en', 'ko', 'mixed', 'other', 'none'] },
-  });
-}
-
-/* ---------- 카메라 실시간 번역: 카메라 화면 한 장면의 글자 읽기 + 번역 ---------- */
-
-// 사진 번역보다 빨리 답하도록 블록만 받는다 (무슨 사진인지·표현 설명은 "자세히"에서 사진 번역으로)
-const FRAME_TASK = {
+const SCAN_ORIGINAL = {
   transcript:
-    'This is one frame from a phone camera that is pointed at text right now (a menu, sign, label, notice, book page ' +
-    'or screen), so text at the edges may be cut off and some may be at an angle or blurry. Read the legible text in ' +
-    'natural reading order, focusing on what is in the middle of the frame, and group it into blocks: a paragraph, ' +
-    'a heading, a line, a menu item, a sign or a label. Copy each block exactly as written. Skip text that is cut off ' +
-    'at the edges, too small or too blurry to read; never guess or invent text. Translate each block: Korean text ' +
-    'into natural English, text in any other language (mostly English) into natural Korean. Keep names, prices and ' +
-    'numbers as they are. ',
-  gist:
-    'This is one frame from a phone camera pointed at text. Do NOT copy the text word for word. Group the legible ' +
-    'text into blocks in natural reading order. In text, write only a short label of a few words for each block in ' +
-    'its original language. In translation, write a natural translation or short summary in your own words: Korean ' +
-    'text into English, any other language into Korean. ',
+    'All legible text exactly as written, in reading order, keeping meaningful line breaks; [?] for unclear parts',
+  gist: 'Short labels (a few words each) of the parts of the text in the original language, not the full text',
 };
 
-const FRAME_END = 'If there is no readable text, return an empty blocks array.';
-
-function frameSchema(task) {
+// 언어 → 원문 → 번역 순서로 받는다 (원문을 먼저 읽어야 번역이 정확하다). 화면에는 번역을 맨 위에 보여 준다
+function scanSchema(task) {
   return S.obj({
-    blocks: S.arr(
-      S.obj({
-        lang: {
-          ...S.str('Language of this block: en = English, ko = Korean, other = any other language'),
-          enum: ['en', 'ko', 'other'],
-        },
-        text: S.str(PHOTO_TEXT[task]),
-        translation: S.str('Natural translation: Korean into English, any other language into Korean'),
-      }),
-      'Text blocks in natural reading order'
+    sourceLang: { ...S.str('Main language of the text in the photo'), enum: ['en', 'ko', 'mixed', 'other', 'none'] },
+    original: S.str(SCAN_ORIGINAL[task]),
+    translation: S.str(
+      'Natural translation of the whole text with the same line breaks: Korean into English, any other language into Korean'
     ),
   });
 }
 
 /**
- * 카메라 화면 한 장면의 글자를 읽어 블록마다 번역한다 (Gemini 필요). 사진 번역과 같은 블록 모양이지만
- * 빨리 답하도록 블록만 받는다. 저작권 보호(RECITATION)로 막히면 한 번만 짧은 이름표와 요약을 받는다 (paraphrased).
- * @param {Blob} frame JPEG
- * @param {{signal?: AbortSignal, onPartial?: (partial: object) => void}} [o]
- * @returns {Promise<{blocks: {lang: 'en'|'ko'|'other', text: string, translation: string}[], paraphrased: boolean}>}
- */
-export async function translateFrame(frame, { signal, onPartial } = {}) {
-  const data = await blobToBase64(frame);
-  if (!data) throw new Error('카메라 화면을 읽지 못했습니다.');
-  return transcriptOrGist(
-    (task) => ({
-      system: PHOTO_SYSTEM,
-      parts: [
-        { inlineData: { mimeType: frame.type || 'image/jpeg', data } },
-        { text: FRAME_TASK[task] + PHOTO_LANG + FRAME_END },
-      ],
-      schema: frameSchema(task),
-      signal,
-      firstChunkMs: 20000,
-      timeoutMs: 45000,
-    }),
-    onPartial
-  );
-}
-
-/**
- * 사진 속 글자를 모두 읽어 블록마다 번역한다 (Gemini 필요). 한국어는 영어로, 다른 언어(주로 영어)는 한국어로.
- * 아주 긴 세로 캡처를 조각낸 사진(pieces)은 위에서부터 차례로 함께 보내고 한 장의 캡처라고 알린다.
- * 저작권 보호(RECITATION)로 원문을 받지 못하면 한 번만, 원문을 옮기지 않은 짧은 이름표와 번역·요약을 다시 받는다
- * (paraphrased: true).
+ * 사진(카메라로 찍은 장면·고른 사진·공유받은 사진) 속 글자를 모두 읽어 원문과 번역을 통째로 받는다 (Gemini 필요).
+ * 한국어는 영어로, 다른 언어(주로 영어)는 한국어로. 아주 긴 세로 캡처를 조각낸 사진(pieces)은 위에서부터 차례로 함께
+ * 보내고 한 장의 캡처라고 알린다. 저작권 보호(RECITATION)로 원문을 받지 못하면 한 번만, 원문 대신 짧은 이름표와
+ * 번역·요약을 다시 받는다 (paraphrased: true).
  * @param {Blob|{blob?: Blob, pieces?: Blob[], data?: string, mimeType?: string}} image
  *   prepareImage() 결과(pieces가 있으면 그것을 보낸다), 사진 Blob, 또는 base64(data)
  * @param {{signal?: AbortSignal, onPartial?: (partial: object) => void}} [o] onPartial: 스트리밍 중 지금까지의 결과
- * @returns {Promise<{noteKo: string, blocks: {lang: 'en'|'ko'|'other', text: string, translation: string}[],
- *          phrases: {phrase: string, meaningKo: string, noteKo: string}[],
- *          sourceLang: 'en'|'ko'|'mixed'|'other'|'none', paraphrased: boolean}>}
+ * @returns {Promise<{sourceLang: 'en'|'ko'|'mixed'|'other'|'none', original: string, translation: string,
+ *          paraphrased: boolean}>}
  */
-export async function translateImage(image, { signal, onPartial } = {}) {
-  const img = image instanceof Blob ? { blob: image } : image || {};
-  const blobs = img.pieces?.length ? img.pieces : img.blob ? [img.blob] : [];
-  const images = img.data
-    ? [{ inlineData: { mimeType: img.mimeType || 'image/jpeg', data: img.data } }]
-    : await Promise.all(
-        blobs.map(async (b) => ({
-          inlineData: { mimeType: img.mimeType || b.type || 'image/jpeg', data: await blobToBase64(b) },
-        }))
-      );
+export async function scanImage(image, { signal, onPartial } = {}) {
+  const images = await imageParts(image);
   if (!images.length || images.some((p) => !p.inlineData.data)) throw new Error('번역할 사진이 없습니다.');
-  const intro = images.length > 1 ? PHOTO_PARTS(images.length) : '';
+  const intro = images.length > 1 ? SCAN_PARTS(images.length) : '';
   return transcriptOrGist(
     (task) => ({
-      system: PHOTO_SYSTEM,
-      parts: [...images, { text: intro + PHOTO_TASK[task] + PHOTO_LANG + PHOTO_END }],
-      schema: photoSchema(task),
+      system: SCAN_SYSTEM,
+      parts: [...images, { text: intro + SCAN_TASK[task] + SCAN_END }],
+      schema: scanSchema(task),
       signal,
       // 사진을 보고 글자를 읽느라 글보다 첫 글자가 늦다 (보내는 시간은 generate가 크기만큼 더 준다).
       // 긴 캡처 조각이 많으면 읽을 글도 많으니 조각마다 시간을 더 준다
@@ -478,4 +385,57 @@ export async function translateImage(image, { signal, onPartial } = {}) {
     }),
     onPartial
   );
+}
+
+/** 보낼 사진 → Gemini inlineData 조각들 */
+async function imageParts(image) {
+  const img = image instanceof Blob ? { blob: image } : image || {};
+  if (img.data) return [{ inlineData: { mimeType: img.mimeType || 'image/jpeg', data: img.data } }];
+  const blobs = img.pieces?.length ? img.pieces : img.blob ? [img.blob] : [];
+  return Promise.all(
+    blobs.map(async (b) => ({
+      inlineData: { mimeType: img.mimeType || b.type || 'image/jpeg', data: await blobToBase64(b) },
+    }))
+  );
+}
+
+export const QUESTION_MAX = 500; // 질문 최대 글자 수
+
+const ASK_SYSTEM =
+  'You help a Korean adult learner of English. They scanned some text with their phone (a menu, sign, notice, label, ' +
+  'document, book page or screen) and now ask questions about it. Base your answers on the scanned text below. If the ' +
+  'answer is not in the text, say so briefly, then help with general knowledge if it is useful. Answer in natural, ' +
+  'friendly Korean unless the question is written in English (then answer in simple English). Keep answers short and ' +
+  'practical, and quote the English words or sentences you talk about.';
+
+/**
+ * 스캔한 글에 대해 묻는다 (Gemini 필요). 앞서 묻고 받은 답(history)을 이어서 보낸다.
+ * 저작권 때문에 원문 대신 요약만 받았으면(paraphrased) 원문 대신 사진(image)을 함께 보낸다.
+ * @param {{original: string, translation: string, paraphrased?: boolean, image?: object}} scan scanImage 결과 + 사진
+ * @param {{q: string, a: string}[]} history 앞서 한 질문과 답 (오래된 것부터)
+ * @param {string} question
+ * @param {{signal?: AbortSignal, onPartial?: (text: string) => void}} [o]
+ * @returns {Promise<string>} 답
+ */
+export async function askAboutScan(scan, history, question, { signal, onPartial } = {}) {
+  const q = String(question ?? '')
+    .trim()
+    .slice(0, QUESTION_MAX);
+  if (!q) throw new Error('질문을 입력하세요.');
+  const context =
+    `Scanned text (original):\n"""\n${scan.paraphrased ? '(Not available because of copyright: see the photo.)' : scan.original}\n"""\n\n` +
+    `Translation:\n"""\n${scan.translation}\n"""`;
+  const first =
+    scan.paraphrased && scan.image ? [...(await imageParts(scan.image)), { text: context }] : [{ text: context }];
+  const contents = [
+    { role: 'user', parts: first },
+    { role: 'model', parts: [{ text: '네, 이 글에 대해 무엇이든 물어보세요.' }] },
+    ...history.flatMap((t) => [
+      { role: 'user', parts: [{ text: t.q }] },
+      { role: 'model', parts: [{ text: t.a }] },
+    ]),
+    { role: 'user', parts: [{ text: q }] },
+  ];
+  const answer = await generate({ system: ASK_SYSTEM, contents, signal, onPartial, maxOutputTokens: 2048 });
+  return String(answer).trim();
 }

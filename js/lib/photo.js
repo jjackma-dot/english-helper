@@ -97,7 +97,7 @@ const HANGUL = /[ᄀ-ᇿ㄰-㆏가-힯]/; // lib/lang.js의 detectLang과 같은
 const NOT_ENGLISH_LETTER = /[^\P{L}A-Za-z]/u;
 
 /**
- * Gemini가 블록 언어(lang)를 주지 않았을 때(예전 결과 등) 글자로 짐작한다. 영어는 조심스럽게만:
+ * Gemini가 원문 언어를 주지 않았거나 여러 언어가 섞였을 때 글자로 짐작한다. 영어는 조심스럽게만:
  * 한글이 있으면 'ko', 영어 알파벳만 있으면 'en', 다른 언어 글자가 하나라도 있거나 글자가 없으면 'other'
  * @returns {'en'|'ko'|'other'}
  */
@@ -108,41 +108,14 @@ export function guessLang(text) {
   return /[A-Za-z]/.test(s) ? 'en' : 'other';
 }
 
-/** 블록의 원문 언어: Gemini가 준 lang, 없으면 글자로 짐작 */
-export function blockLang(b) {
-  return LANGS.includes(b?.lang) ? b.lang : guessLang(b?.text);
-}
-
-/** 글자가 있는 블록만 (스트리밍 중 아직 빈 조각은 뺀다) */
-export function photoBlocks(r) {
-  return (Array.isArray(r?.blocks) ? r.blocks : []).filter((b) => b && (str(b.text) || str(b.translation)));
-}
-
 /**
- * 블록의 영어 쪽·한국어 쪽 (읽기·단어장 저장용). 원문이 한국어면 번역이 영어, 원문이 영어면 원문이 영어.
- * 원문이 다른 언어(일본어·베트남어 등)면 영어 쪽은 없고 번역(한국어)만 있다.
- * @returns {{from: 'ko'|'en'|'other', en: string, ko: string}}
- */
-export function blockSides(b) {
-  const text = str(b?.text);
-  const tr = str(b?.translation);
-  const from = blockLang(b);
-  if (from === 'ko') return { from, en: tr, ko: text };
-  if (from === 'en') return { from, en: text, ko: tr };
-  return { from, en: '', ko: tr };
-}
-
-/**
- * 사진 글의 주 언어: Gemini가 준 sourceLang(en·ko·other), 섞여 있거나 없으면 블록들로
- * (한국어 블록이 있으면 텍스트 번역처럼 'ko', 다른 언어 블록이 있으면 'other', 아니면 'en')
+ * 스캔한 글의 원문 언어: Gemini가 준 sourceLang(en·ko·other), 섞여 있거나(mixed) 없으면 원문 글자로
+ * (한글이 있으면 텍스트 번역처럼 'ko', 다른 언어 글자가 있으면 'other', 아니면 'en')
  * @returns {'en'|'ko'|'other'}
  */
-export function photoLang(r) {
+export function scanLang(r) {
   if (LANGS.includes(r?.sourceLang)) return r.sourceLang;
-  const langs = photoBlocks(r).map(blockLang);
-  if (langs.includes('ko')) return 'ko';
-  if (langs.includes('other')) return 'other';
-  return 'en';
+  return guessLang(r?.original);
 }
 
 /**
@@ -154,36 +127,18 @@ export function textDirection(lang) {
   return lang === 'ko' ? { from: 'ko', to: 'en' } : { from: 'en', to: 'ko' };
 }
 
-/** 사진에서 읽은 원문 전체 (블록 사이 빈 줄). "글자 고쳐서 다시 번역"에 쓴다 */
-export function photoSourceText(r) {
-  return photoBlocks(r)
-    .map((b) => str(b.text))
-    .filter(Boolean)
-    .join('\n\n');
-}
-
-/** 전체 복사: 블록마다 원문과 번역 */
-export function photoCopyText(r) {
-  return photoBlocks(r)
-    .map((b) => [str(b.text), str(b.translation) && `→ ${str(b.translation)}`].filter(Boolean).join('\n'))
-    .join('\n\n');
-}
-
 /**
- * 번역 기록에 넣을 항목. 텍스트 번역 기록과 같은 모양({source, result, from, to})에 사진 표시(photo)를 더한다.
+ * 번역 기록에 넣을 항목. 텍스트 번역 기록과 같은 모양({source, result, from, to})에 스캔 표시(photo)를 더한다.
  * from은 원문 언어 그대로 ('en'|'ko'|'other'). 영어도 한국어도 아닌 글(other)을 영어로 적지 않는다.
  * 기록을 누르면 원문을 다시 번역하므로(textDirection 방향) 원문은 남기고, 번역은 짧은 미리 보기만 남긴다.
  * 저작권 때문에 원문 대신 요약을 받았거나 글자가 없으면 넣지 않는다 (null).
  */
-export function photoHistoryItem(r) {
+export function scanHistoryItem(r) {
   if (r?.paraphrased) return null;
-  const source = photoSourceText(r).slice(0, HISTORY_SOURCE_MAX);
+  const source = str(r?.original).slice(0, HISTORY_SOURCE_MAX);
   if (!source) return null;
-  const from = photoLang(r);
-  const all = photoBlocks(r)
-    .map((b) => str(b.translation).replace(/\s+/g, ' '))
-    .filter(Boolean)
-    .join(' / ');
+  const from = scanLang(r);
+  const all = str(r?.translation).replace(/\s+/g, ' ');
   const result = all.length > HISTORY_PREVIEW_MAX ? `${all.slice(0, HISTORY_PREVIEW_MAX - 1)}…` : all;
   return { source, result, from, to: textDirection(from).to, photo: true };
 }

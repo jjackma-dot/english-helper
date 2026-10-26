@@ -1,4 +1,4 @@
-// 사진 번역: 보낼 크기·형식 정하기(순수 함수), Gemini 요청(가짜 fetch), 공유받기(manifest·서비스 워커)를 시험한다
+// 스캔 번역: 보낼 크기·형식 정하기(순수 함수), Gemini 요청(사진 읽기·질문, 가짜 fetch), 공유받기(manifest·서비스 워커)를 시험한다
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -24,22 +24,8 @@ globalThis.FileReader = class {
 };
 
 const photo = await import('../js/lib/photo.js');
-const {
-  fitSize,
-  photoPlan,
-  imageType,
-  rawFallback,
-  guessLang,
-  blockLang,
-  blockSides,
-  photoBlocks,
-  photoLang,
-  textDirection,
-  photoSourceText,
-  photoCopyText,
-  photoHistoryItem,
-} = photo;
-const { translateImage } = await import('../js/services/translate.js');
+const { fitSize, photoPlan, imageType, rawFallback, guessLang, scanLang, textDirection, scanHistoryItem } = photo;
+const { scanImage, askAboutScan } = await import('../js/services/translate.js');
 const { generate } = await import('../js/services/gemini.js');
 
 /* ---------- 보낼 크기·형식 ---------- */
@@ -144,44 +130,9 @@ test('imageType·rawFallback: 열지 못한 사진은 Gemini가 읽는 형식이
   assert.ok((photo.RAW_MAX_BYTES * 4) / 3 < 19.5e6);
 });
 
-/* ---------- 결과 글 모으기 ---------- */
+/* ---------- 결과 언어·번역 기록 ---------- */
 
-const RESULT = {
-  noteKo: '가게 앞 안내문이에요.',
-  blocks: [
-    { text: 'OPEN 9AM–6PM\nClosed Mondays', translation: '영업 오전 9시~오후 6시\n월요일 휴무' },
-    { text: '', translation: '' },
-    { text: '화장실은 2층', translation: 'Restroom on the 2nd floor' },
-    { text: 'ラーメン', translation: '라멘' },
-  ],
-  phrases: [],
-  sourceLang: 'mixed',
-};
-
-test('블록: 빈 조각은 빼고, 영어 쪽(읽기·저장)은 원문이 한국어면 번역, 영어면 원문이다', () => {
-  const blocks = photoBlocks(RESULT);
-  assert.equal(blocks.length, 3);
-  assert.deepEqual(photoBlocks({ blocks: 'x' }), []);
-  assert.deepEqual(blockSides(blocks[0]), {
-    from: 'en',
-    en: 'OPEN 9AM–6PM\nClosed Mondays',
-    ko: '영업 오전 9시~오후 6시\n월요일 휴무',
-  });
-  assert.deepEqual(blockSides(blocks[1]), { from: 'ko', en: 'Restroom on the 2nd floor', ko: '화장실은 2층' });
-  assert.deepEqual(blockSides(blocks[2]), { from: 'other', en: '', ko: '라멘' }, '다른 언어는 영어 쪽이 없다');
-});
-
-test('블록 언어: Gemini가 준 lang을 따르고, 영어 글자가 섞인 일본어·베트남어 블록은 영어로 보지 않는다', () => {
-  const side = (lang, text, translation = '번역') => blockSides({ lang, text, translation });
-  assert.deepEqual(side('other', 'ラーメン Ramen ¥800', '라멘 800엔'), { from: 'other', en: '', ko: '라멘 800엔' });
-  assert.deepEqual(side('other', '営業中 OPEN', '영업 중'), { from: 'other', en: '', ko: '영업 중' });
-  assert.deepEqual(side('other', 'Phở bò tái 65.000đ', '소고기 쌀국수'), { from: 'other', en: '', ko: '소고기 쌀국수' });
-  assert.deepEqual(side('en', 'Exit', '출구'), { from: 'en', en: 'Exit', ko: '출구' });
-  assert.deepEqual(side('ko', '출구', 'Exit'), { from: 'ko', en: 'Exit', ko: '출구' });
-  assert.equal(blockLang({ lang: 'ot', text: 'Hello' }), 'en', '스트리밍 중 덜 받은 lang은 쓰지 않고 글자로 짐작');
-});
-
-test('guessLang: lang이 없으면(예전 결과) 조심스럽게 짐작한다 — 다른 언어 글자가 하나라도 있으면 영어가 아니다', () => {
+test('guessLang: 언어를 모르거나 섞였을 때 조심스럽게 짐작한다 — 다른 언어 글자가 하나라도 있으면 영어가 아니다', () => {
   assert.equal(guessLang('출구 Exit'), 'ko', '한글이 있으면 한국어');
   assert.equal(guessLang('OPEN 9AM–6PM\nClosed Mondays'), 'en');
   assert.equal(guessLang("Don't touch! (No. 3)"), 'en');
@@ -192,63 +143,52 @@ test('guessLang: lang이 없으면(예전 결과) 조심스럽게 짐작한다 �
   assert.equal(guessLang('営業中 OPEN'), 'other', '한자');
   assert.equal(guessLang('出口 Exit'), 'other', '중국어');
   assert.equal(guessLang('Выход'), 'other', '러시아어');
-  assert.equal(guessLang('¥800 / 12:30'), 'other', '글자가 없으면 영어 쪽이 없다');
+  assert.equal(guessLang('¥800 / 12:30'), 'other', '글자가 없으면 영어가 아니다');
   assert.equal(guessLang(''), 'other');
-  assert.equal(blockSides({ text: 'Phở bò tái', translation: '소고기 쌀국수' }).en, '');
 });
 
-test('photoLang·textDirection: 사진 글의 주 언어와, 텍스트 번역으로 넘길 때 방향', () => {
-  assert.equal(photoLang({ sourceLang: 'other', blocks: [{ text: 'Hello' }] }), 'other', 'Gemini가 준 주 언어');
-  assert.equal(photoLang(RESULT), 'ko', '섞여 있고 한국어 블록이 있으면 한국어');
-  const jpMenu = {
-    sourceLang: 'mixed',
-    blocks: [
-      { lang: 'other', text: 'ラーメン', translation: '라멘' },
-      { lang: 'en', text: 'Ramen', translation: '라멘' },
-    ],
-  };
-  assert.equal(photoLang(jpMenu), 'other', '섞여 있고 다른 언어 블록이 있으면 other');
-  assert.equal(photoLang({ blocks: [{ text: 'Hello' }] }), 'en');
+test('scanLang·textDirection: 스캔한 글의 원문 언어와, 텍스트 번역으로 넘길 때 방향', () => {
+  assert.equal(scanLang({ sourceLang: 'other', original: 'Hello' }), 'other', 'Gemini가 준 언어');
+  assert.equal(
+    scanLang({ sourceLang: 'mixed', original: '화장실은 2층\nRestroom' }),
+    'ko',
+    '섞였으면 한글이 있으면 한국어'
+  );
+  assert.equal(scanLang({ sourceLang: 'mixed', original: 'ラーメン\nRamen' }), 'other');
+  assert.equal(scanLang({ original: 'Hello' }), 'en', '언어가 없으면 글자로');
   assert.deepEqual(textDirection('ko'), { from: 'ko', to: 'en' });
   assert.deepEqual(textDirection('en'), { from: 'en', to: 'ko' });
   assert.deepEqual(textDirection('other'), { from: 'en', to: 'ko' }, '다른 언어도 한국어로 (Gemini가 옮긴다)');
 });
 
-test('원문 모으기·전체 복사·번역 기록 항목', () => {
-  assert.equal(photoSourceText(RESULT), 'OPEN 9AM–6PM\nClosed Mondays\n\n화장실은 2층\n\nラーメン');
-  assert.equal(
-    photoCopyText(RESULT),
-    'OPEN 9AM–6PM\nClosed Mondays\n→ 영업 오전 9시~오후 6시\n월요일 휴무\n\n화장실은 2층\n→ Restroom on the 2nd floor\n\nラーメン\n→ 라멘'
-  );
-  assert.deepEqual(photoHistoryItem({ ...RESULT, sourceLang: 'en' }), {
-    source: photoSourceText(RESULT),
-    result: '영업 오전 9시~오후 6시 월요일 휴무 / Restroom on the 2nd floor / 라멘',
+test('번역 기록 항목: 원문은 남기고 번역은 짧은 미리 보기만, 요약만 받았거나 글자가 없으면 넣지 않는다', () => {
+  const r = {
+    sourceLang: 'en',
+    original: 'OPEN 9AM–6PM\nClosed Mondays',
+    translation: '영업 오전 9시~오후 6시\n월요일 휴무',
+  };
+  assert.deepEqual(scanHistoryItem(r), {
+    source: 'OPEN 9AM–6PM\nClosed Mondays',
+    result: '영업 오전 9시~오후 6시 월요일 휴무',
     from: 'en',
     to: 'ko',
     photo: true,
   });
-  assert.equal(photoHistoryItem(RESULT).from, 'ko', '섞여 있으면 텍스트 번역처럼 한글이 있으면 한국어로 본다');
-  assert.equal(photoHistoryItem({ ...RESULT, paraphrased: true }), null, '요약만 받았으면 넣지 않는다');
-  // 영어가 아닌 글은 영어(en)로 적지 않는다. 누르면 textDirection('other')대로 한국어로 다시 번역한다
-  const jp = photoHistoryItem({
-    sourceLang: 'other',
-    blocks: [{ lang: 'other', text: 'ラーメン Ramen ¥800', translation: '라멘 800엔' }],
-  });
-  assert.deepEqual([jp.from, jp.to, jp.source], ['other', 'ko', 'ラーメン Ramen ¥800']);
-  const vi = photoHistoryItem({ sourceLang: 'mixed', blocks: [{ text: 'Phở bò tái', translation: '소고기 쌀국수' }] });
-  assert.deepEqual([vi.from, vi.to], ['other', 'ko'], 'lang이 없어도 베트남어를 영어로 적지 않는다');
-  assert.equal(photoHistoryItem({ noteKo: '글자가 없어요', blocks: [] }), null);
-
-  const long = photoHistoryItem({
-    blocks: [{ text: 'a'.repeat(5000), translation: '가'.repeat(500) }],
-    sourceLang: 'en',
-  });
+  assert.deepEqual(
+    [scanHistoryItem({ sourceLang: 'ko', original: '화장실은 2층', translation: 'Restroom' }).to],
+    ['en']
+  );
+  const jp = scanHistoryItem({ sourceLang: 'other', original: 'ラーメン Ramen ¥800', translation: '라멘 800엔' });
+  assert.deepEqual([jp.from, jp.to], ['other', 'ko'], '영어가 아닌 글은 영어(en)로 적지 않는다');
+  assert.equal(scanHistoryItem({ ...r, paraphrased: true }), null, '요약만 받았으면 넣지 않는다');
+  assert.equal(scanHistoryItem({ sourceLang: 'none', original: '', translation: '' }), null);
+  const long = scanHistoryItem({ sourceLang: 'en', original: 'a'.repeat(5000), translation: '가'.repeat(500) });
   assert.equal(long.source.length, 3000);
   assert.equal(long.result.length, 120, '번역은 짧은 미리 보기만');
   assert.ok(long.result.endsWith('…'));
 });
 
-/* ---------- translateImage (Gemini 스트리밍 흉내) ---------- */
+/* ---------- scanImage·askAboutScan (Gemini 스트리밍 흉내) ---------- */
 
 const enc = new TextEncoder();
 const sse = (...chunks) =>
@@ -274,30 +214,22 @@ function mockFetch(handlers) {
 
 const jpeg = new Blob([new Uint8Array([0xff, 0xd8, 0xff, 1, 2, 3])], { type: 'image/jpeg' });
 const ANSWER = {
-  noteKo: '가게 앞 안내문이에요.',
-  blocks: [
-    { lang: 'en', text: 'OPEN 9AM–6PM\nClosed Mondays', translation: '영업 오전 9시~오후 6시\n월요일 휴무' },
-    { lang: 'en', text: 'Please knock', translation: '노크해 주세요' },
-  ],
-  phrases: [{ phrase: 'Closed Mondays', meaningKo: '월요일 휴무', noteKo: '가게 안내에 자주 나와요' }],
   sourceLang: 'en',
+  original: 'OPEN 9AM–6PM\nClosed Mondays\n\nPlease knock',
+  translation: '영업 오전 9시~오후 6시\n월요일 휴무\n\n노크해 주세요',
 };
 
-test('translateImage: 사진을 inline으로 보내고, 읽는 순서대로 스트리밍 스키마(propertyOrdering)로 받는다', async () => {
+test('scanImage: 사진을 inline으로 보내고, 언어 → 원문 → 번역 순서의 스트리밍 스키마로 통째로 받는다', async () => {
   const full = JSON.stringify(ANSWER);
   const cut = full.indexOf('"translation"');
   const calls = mockFetch([() => sse(part(full.slice(0, cut)), part(full.slice(cut), 'STOP'))]);
   const partials = [];
-  const r = await translateImage({ blob: jpeg, mimeType: 'image/jpeg' }, { onPartial: (p) => partials.push(p) });
+  const r = await scanImage({ blob: jpeg, mimeType: 'image/jpeg' }, { onPartial: (p) => partials.push(p) });
   assert.deepEqual(r, { ...ANSWER, paraphrased: false });
   assert.deepEqual(
     partials[0],
-    {
-      noteKo: '가게 앞 안내문이에요.',
-      blocks: [{ lang: 'en', text: 'OPEN 9AM–6PM\nClosed Mondays' }],
-      paraphrased: false,
-    },
-    '첫 블록의 언어와 원문부터 바로 보여 줄 수 있다'
+    { sourceLang: 'en', original: ANSWER.original, paraphrased: false },
+    '원문부터 바로 보여 줄 수 있다'
   );
 
   assert.equal(calls.length, 1);
@@ -309,46 +241,40 @@ test('translateImage: 사진을 inline으로 보내고, 읽는 순서대로 스�
   assert.equal(image.inlineData.mimeType, 'image/jpeg');
   assert.deepEqual([...Buffer.from(image.inlineData.data, 'base64')], [0xff, 0xd8, 0xff, 1, 2, 3]);
   assert.match(prompt.text, /^Read ALL legible text in this photo in natural reading order/);
-  assert.match(prompt.text, /menu item, a sign or a label/);
-  assert.match(prompt.text, /Never guess or invent text[^.]*: write \[\?\] for unclear parts/);
-  assert.match(prompt.text, /Korean text into natural English, text in any other language \(mostly English\) into natural Korean/);
-  assert.match(prompt.text, /first set lang[^.]*en for English, ko for Korean, other for\s+any other language/);
-  assert.match(prompt.text, /Japanese, Chinese, Vietnamese or French\), even if[^.]*Latin letters or English words/);
-  assert.match(prompt.text, /two languages side by side \(for example\s+출구 Exit\), make a separate block for each/);
-  assert.match(prompt.text, /0–5 useful English expressions/);
-  assert.match(prompt.text, /noteKo[^.]*what the\s+photo is/);
+  assert.match(prompt.text, /Never guess\s+or invent text[^.]*: write \[\?\] for unclear parts/);
+  assert.match(prompt.text, /translate the WHOLE text as one natural, easy-to-read text with the same\s+line breaks/);
+  assert.match(
+    prompt.text,
+    /Korean text into natural English, text in any other language \(mostly English\) into natural Korean/
+  );
+  assert.match(prompt.text, /mixed if Korean and another\s+language are both substantial/);
   assert.doesNotMatch(prompt.text, /consecutive parts/);
 
   assert.equal(generationConfig.responseMimeType, 'application/json');
   const schema = generationConfig.responseSchema;
-  assert.deepEqual(schema.propertyOrdering, ['noteKo', 'blocks', 'phrases', 'sourceLang']);
+  assert.deepEqual(schema.propertyOrdering, ['sourceLang', 'original', 'translation'], '원문을 먼저 읽고 번역한다');
   assert.deepEqual(schema.required, schema.propertyOrdering);
-  const block = schema.properties.blocks.items;
-  assert.deepEqual(block.propertyOrdering, ['lang', 'text', 'translation'], '블록 언어가 맨 먼저 온다');
-  assert.deepEqual(block.required, block.propertyOrdering);
-  assert.deepEqual(block.properties.lang.enum, ['en', 'ko', 'other']);
-  assert.match(block.properties.lang.description, /other = any other language/);
-  assert.match(block.properties.text.description, /exactly as written/);
-  assert.deepEqual(schema.properties.phrases.items.propertyOrdering, ['phrase', 'meaningKo', 'noteKo']);
   assert.deepEqual(schema.properties.sourceLang.enum, ['en', 'ko', 'mixed', 'other', 'none']);
+  assert.match(schema.properties.original.description, /exactly as written/);
+  assert.match(schema.properties.translation.description, /whole text with the same line breaks/);
 });
 
-test('translateImage: 사진 Blob이나 이미 읽어 둔 base64(원본 HEIF 등)도 받는다', async () => {
+test('scanImage: 사진 Blob이나 이미 읽어 둔 base64(원본 HEIF 등)도 받는다', async () => {
   const calls = mockFetch([() => sse(part(JSON.stringify(ANSWER), 'STOP'))]);
-  await translateImage(jpeg);
+  await scanImage(jpeg);
   assert.equal(calls[0].body.contents[0].parts[0].inlineData.mimeType, 'image/jpeg');
-  await translateImage({ data: 'AAAA', mimeType: 'image/heic' });
+  await scanImage({ data: 'AAAA', mimeType: 'image/heic' });
   assert.deepEqual(calls[1].body.contents[0].parts[0].inlineData, { mimeType: 'image/heic', data: 'AAAA' });
-  await translateImage({ blob: jpeg, pieces: [jpeg], mimeType: 'image/heic' });
+  await scanImage({ blob: jpeg, pieces: [jpeg], mimeType: 'image/heic' });
   assert.equal(calls[2].body.contents[0].parts[0].inlineData.mimeType, 'image/heic', '원본 그대로 보내는 형식');
-  await assert.rejects(translateImage({}), /번역할 사진이 없습니다/);
+  await assert.rejects(scanImage({}), /번역할 사진이 없습니다/);
   assert.equal(calls.length, 3);
 });
 
-test('translateImage: 긴 캡처 조각(pieces)은 위에서부터 차례로 보내고 한 장의 캡처라고 알린다 (요약으로 다시 물을 때도)', async () => {
+test('scanImage: 긴 캡처 조각(pieces)은 위에서부터 차례로 보내고 한 장의 캡처라고 알린다 (요약으로 다시 물을 때도)', async () => {
   const pieces = [1, 2, 3].map((n) => new Blob([new Uint8Array([0xff, 0xd8, n])], { type: 'image/jpeg' }));
   const calls = mockFetch([() => sse(part('', 'RECITATION')), () => sse(part(JSON.stringify(ANSWER), 'STOP'))]);
-  const r = await translateImage({ blob: pieces[0], pieces, mimeType: 'image/jpeg', width: 950, height: 7000 });
+  const r = await scanImage({ blob: pieces[0], pieces, mimeType: 'image/jpeg', width: 950, height: 7000 });
   assert.equal(r.paraphrased, true);
   assert.equal(calls.length, 2);
   for (const call of calls) {
@@ -363,43 +289,45 @@ test('translateImage: 긴 캡처 조각(pieces)은 위에서부터 차례로 보
       ],
       '순서대로'
     );
-    assert.match(parts[3].text, /^These 3 images are consecutive parts of ONE long screenshot, in order from top to bottom/);
+    assert.match(
+      parts[3].text,
+      /^These 3 images are consecutive parts of ONE long screenshot, in order from top to bottom/
+    );
     assert.match(parts[3].text, /overlap by a few lines: read those duplicated lines only once/);
   }
 });
 
-test('translateImage: 저작권(RECITATION)으로 막히면 원문 조각을 지우고, 원문을 옮기지 않는 요약으로 한 번만 다시 묻는다', async () => {
-  const short = { ...ANSWER, blocks: [{ text: 'Chapter 1', translation: '주인공이 집을 떠나는 장면의 요약' }] };
+test('scanImage: 저작권(RECITATION)으로 막히면 원문 조각을 지우고, 원문을 옮기지 않는 요약으로 한 번만 다시 묻는다', async () => {
+  const short = { sourceLang: 'en', original: 'Chapter 1', translation: '주인공이 집을 떠나는 장면의 요약' };
   const calls = mockFetch([
-    () => sse(part('{"noteKo":"책 한 쪽","blocks":[{"text":"It was a bright cold'), part('', 'RECITATION')),
+    () => sse(part('{"sourceLang":"en","original":"It was a bright cold'), part('', 'RECITATION')),
     () => sse(part(JSON.stringify(short), 'STOP')),
   ]);
   const partials = [];
-  const r = await translateImage(jpeg, { onPartial: (p) => partials.push(p) });
+  const r = await scanImage(jpeg, { onPartial: (p) => partials.push(p) });
   assert.equal(calls.length, 2);
   const [image, prompt] = calls[1].body.contents[0].parts;
   assert.equal(image.inlineData.mimeType, 'image/jpeg', '다시 물을 때도 사진을 보낸다');
   assert.match(prompt.text, /Do NOT copy the text word for word/);
-  assert.match(prompt.text, /short label of a few words/);
-  const retrySchema = calls[1].body.generationConfig.responseSchema;
-  assert.match(retrySchema.properties.blocks.items.properties.text.description, /not the full text/);
+  assert.match(prompt.text, /short labels of a few words/);
+  assert.match(calls[1].body.generationConfig.responseSchema.properties.original.description, /not the full text/);
   assert.equal(r.paraphrased, true);
-  assert.equal(r.blocks[0].translation, '주인공이 집을 떠나는 장면의 요약');
-  assert.ok(partials.some((p) => p.blocks?.[0]?.text === 'It was a bright cold'));
+  assert.equal(r.translation, '주인공이 집을 떠나는 장면의 요약');
+  assert.ok(partials.some((p) => p.original === 'It was a bright cold'));
   const clearAt = partials.findIndex((p) => Object.keys(p).length === 1 && p.paraphrased === true);
   assert.ok(clearAt > 0, '앞서 보여 준 원문을 지우라는 신호');
   assert.ok(partials.slice(clearAt).every((p) => p.paraphrased));
 
   const again = mockFetch([() => sse(part('', 'RECITATION'))]);
-  await assert.rejects(translateImage(jpeg), (e) => e.reason === 'RECITATION');
+  await assert.rejects(scanImage(jpeg), (e) => e.reason === 'RECITATION');
   assert.equal(again.length, 2, '요약 요청까지 막히면 그만둔다');
 });
 
-test('translateImage: 취소하면 다른 모델·요약으로 다시 묻지 않는다', async () => {
+test('scanImage: 취소하면 다른 모델·요약으로 다시 묻지 않는다', async () => {
   const calls = mockFetch([() => sse(part(JSON.stringify(ANSWER), 'STOP'))]);
   const ctl = new AbortController();
   ctl.abort();
-  await assert.rejects(translateImage(jpeg, { signal: ctl.signal }), { name: 'AbortError' });
+  await assert.rejects(scanImage(jpeg, { signal: ctl.signal }), { name: 'AbortError' });
   assert.equal(calls.length, 1);
 
   // 답을 기다리는 중에 취소
@@ -410,11 +338,50 @@ test('translateImage: 취소하면 다른 모델·요약으로 다시 묻지 않
       ),
   ]);
   const ctl2 = new AbortController();
-  const p = translateImage(jpeg, { signal: ctl2.signal });
+  const p = scanImage(jpeg, { signal: ctl2.signal });
   await new Promise((r) => setTimeout(r, 10));
   ctl2.abort();
   await assert.rejects(p, { name: 'AbortError' });
   assert.equal(hanging.length, 1);
+});
+
+test('askAboutScan: 원문과 번역을 앞에 두고, 앞서 한 질문·답을 이어서 보내며 답을 받는 대로 알린다', async () => {
+  const calls = mockFetch([() => sse(part('맵지 않은 메뉴는 '), part('Pancakes예요.', 'STOP'))]);
+  const partials = [];
+  const a = await askAboutScan(
+    { ...ANSWER, paraphrased: false, image: { blob: jpeg } },
+    [{ q: '무슨 가게예요?', a: '카페예요.' }],
+    '  맵지 않은 메뉴는?  ',
+    { onPartial: (t) => partials.push(t) }
+  );
+  assert.equal(a, '맵지 않은 메뉴는 Pancakes예요.');
+  assert.deepEqual(partials, ['맵지 않은 메뉴는 ', '맵지 않은 메뉴는 Pancakes예요.']);
+  const { contents, systemInstruction, generationConfig } = calls[0].body;
+  assert.match(systemInstruction.parts[0].text, /Base your answers on the scanned text/);
+  assert.match(systemInstruction.parts[0].text, /friendly Korean unless the question is written in English/);
+  assert.equal(generationConfig.responseMimeType, undefined, '글로 받는다');
+  assert.deepEqual(
+    contents.map((c) => c.role),
+    ['user', 'model', 'user', 'model', 'user']
+  );
+  assert.equal(contents[0].parts.length, 1, '원문이 있으면 사진은 보내지 않는다');
+  assert.match(contents[0].parts[0].text, /Scanned text \(original\):\n"""\nOPEN 9AM–6PM\nClosed Mondays/);
+  assert.match(contents[0].parts[0].text, /Translation:\n"""\n영업 오전 9시/);
+  assert.deepEqual(
+    contents.slice(2).map((c) => c.parts[0].text),
+    ['무슨 가게예요?', '카페예요.', '맵지 않은 메뉴는?']
+  );
+});
+
+test('askAboutScan: 요약만 받았으면 사진을 함께 보내고, 빈 질문은 보내지 않는다', async () => {
+  const calls = mockFetch([() => sse(part('줄거리예요.', 'STOP'))]);
+  await askAboutScan({ ...ANSWER, paraphrased: true, image: { blob: jpeg } }, [], '무슨 내용이에요?');
+  const first = calls[0].body.contents[0].parts;
+  assert.equal(first.length, 2);
+  assert.equal(first[0].inlineData.mimeType, 'image/jpeg');
+  assert.match(first[1].text, /Not available because of copyright: see the photo/);
+  await assert.rejects(askAboutScan(ANSWER, [], '   '), /질문을 입력하세요/);
+  assert.equal(calls.length, 1);
 });
 
 test('큰 사진을 보내다 연결이 끊기면 다시 보내지 않고 알린다 (데이터 낭비 막기)', async () => {
@@ -424,7 +391,7 @@ test('큰 사진을 보내다 연결이 끊기면 다시 보내지 않고 알린
     },
   ]);
   await assert.rejects(
-    translateImage({ data: 'A'.repeat(2.1e6), mimeType: 'image/jpeg' }),
+    scanImage({ data: 'A'.repeat(2.1e6), mimeType: 'image/jpeg' }),
     (e) => e.message === '사진을 보내지 못했어요. 인터넷 연결을 확인하고 다시 시도해 보세요.'
   );
   assert.equal(calls.length, 1);
@@ -442,7 +409,10 @@ test('큰 사진이 시간 안에 오지 않으면 사진이 크거나 연결이
   globalThis.setTimeout = (fn, ms, ...args) => realSetTimeout(fn, Math.min(ms, 5), ...args);
   try {
     await assert.rejects(
-      generate({ parts: [{ inlineData: { mimeType: 'image/jpeg', data: 'A'.repeat(2.1e6) } }, { text: 'x' }], key: 'k' }),
+      generate({
+        parts: [{ inlineData: { mimeType: 'image/jpeg', data: 'A'.repeat(2.1e6) } }, { text: 'x' }],
+        key: 'k',
+      }),
       (e) => e.message === '사진이 크거나 연결이 느려 시간이 오래 걸렸어요. 다시 시도하거나 더 작은 사진으로 해 보세요.'
     );
   } finally {
@@ -534,7 +504,11 @@ test('서비스 워커: 사진을 넣을 공간이 모자라면 예전 사진을
   form.append('image', new File([new Uint8Array([1, 2, 3])], 'big.jpg', { type: 'image/jpeg' }));
   const res = await fetchEvent(share(form));
   assert.equal(res.status, 303);
-  assert.equal(res.headers.get('Location'), `${SCOPE}#/translate?photo=shared`, '글 번역 화면으로 조용히 넘기지 않는다');
+  assert.equal(
+    res.headers.get('Location'),
+    `${SCOPE}#/translate?photo=shared`,
+    '글 번역 화면으로 조용히 넘기지 않는다'
+  );
   assert.equal(stores.get('share-inbox').size, 0, '예전 사진이 대신 나오지 않는다');
 });
 
