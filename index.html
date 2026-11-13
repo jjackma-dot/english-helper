@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https: data: blob:; media-src 'self' https: blob: data:; connect-src 'self' https: wss://generativelanguage.googleapis.com; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https: data: blob:; media-src 'self' https: blob: data:; connect-src 'self' https: wss://generativelanguage.googleapis.com wss://*.stt.speech.microsoft.com; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'"
     />
     <meta name="referrer" content="strict-origin-when-cross-origin" />
     <title>English Helper</title>
@@ -41,6 +41,7 @@
       <section id="view-tutor" class="view" hidden></section>
       <section id="view-dict" class="view" hidden></section>
       <section id="view-translate" class="view" hidden></section>
+      <section id="view-level" class="view" hidden></section>
       <section id="view-ott" class="view" hidden></section>
       <section id="view-words" class="view" hidden></section>
       <section id="view-settings" class="view" hidden></section>
@@ -51,7 +52,7 @@
       <a href="#/tutor" data-tab="tutor" data-icon="chat"><span>AI 회화</span></a>
       <a href="#/dict" data-tab="dict" data-icon="book"><span>사전</span></a>
       <a href="#/translate" data-tab="translate" data-icon="globe"><span>번역</span></a>
-      <a href="#/ott" data-tab="ott" data-icon="film"><span>OTT</span></a>
+      <a href="#/level" data-tab="level" data-icon="award"><span>레벨테스트</span></a>
       <a href="#/words" data-tab="words" data-icon="star"><span>단어장</span></a>
     </nav>
   </body>

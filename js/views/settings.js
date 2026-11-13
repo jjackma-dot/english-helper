@@ -16,6 +16,7 @@ import {
 import { icon } from '../icons.js';
 import { getSettings, updateSettings, clearAllData, DEFAULT_GEMINI_MODEL } from '../store.js';
 import { generate, listModels } from '../services/gemini.js';
+import { REGIONS, testAzure } from '../services/azure-speech.js';
 import { getVoices, speak, ttsSupported } from '../speech.js';
 import { VERSION } from '../version.js';
 import { canInstall, promptInstall, IOS_INSTALL_SHORT } from '../install.js';
@@ -124,7 +125,7 @@ function geminiSection() {
     h(
       'p',
       { class: 'hint' },
-      '키를 넣으면 앱 안에서 바로 하는 AI 음성 영어회화, AI 한영사전·예문, 더 자연스러운 번역, 녹음 받아쓰기, OTT 대사 해설을 쓸 수 있습니다. Google AI Studio에서 무료 등급 키를 발급받을 수 있습니다.'
+      '키를 넣으면 앱 안에서 바로 하는 AI 음성 영어회화, AI 한영사전·예문, 더 자연스러운 번역, 스캔 번역, 녹음 받아쓰기, 레벨테스트 채점을 쓸 수 있습니다. Google AI Studio에서 무료 등급 키를 발급받을 수 있습니다.'
     ),
     h(
       'p',
@@ -170,6 +171,82 @@ function geminiSection() {
       ' 키·단어장·기록은 이 기기(브라우저)에만 저장돼요. 다른 기기(가족 휴대폰 등)에서는 그 기기에서 따로 넣어야 해요. 키는 Google API 호출에만 쓰이니 공용 기기에서는 넣지 마세요.'
     ),
     h('p', { class: 'hint' }, '같은 키(같은 Google 프로젝트)를 여러 기기에서 쓰면 하루 무료 한도를 함께 써요.')
+  );
+}
+
+function azureSection() {
+  const s = getSettings();
+  const keyInput = h('input', {
+    type: 'password',
+    value: s.azureKey,
+    autocomplete: 'off',
+    spellcheck: 'false',
+    placeholder: '32자리 키',
+  });
+  const regionSelect = h(
+    'select',
+    null,
+    REGIONS.map(([id, name]) => h('option', { value: id, selected: id === s.azureRegion }, `${name} (${id})`))
+  );
+  const status = h('p', { class: 'hint' });
+  const save = () => updateSettings({ azureKey: keyInput.value.trim(), azureRegion: regionSelect.value });
+  keyInput.addEventListener('change', save);
+  regionSelect.addEventListener('change', save);
+  const showKey = h('input', {
+    type: 'checkbox',
+    onchange: () => (keyInput.type = showKey.checked ? 'text' : 'password'),
+  });
+  const testBtn = btn(
+    '연결 테스트',
+    async () => {
+      save();
+      if (!keyInput.value.trim()) return toast('키를 먼저 입력하세요.');
+      testBtn.disabled = true;
+      status.textContent = '확인 중… (1초 무음을 보내 봅니다)';
+      status.className = 'hint';
+      try {
+        await testAzure({ key: keyInput.value.trim(), region: regionSelect.value });
+        status.textContent = '연결 성공: 레벨테스트에서 발음 평가를 쓸 수 있어요.';
+        status.className = 'hint ok-text';
+      } catch (e) {
+        status.textContent = errorMessage(e);
+        status.className = 'hint error-text';
+      } finally {
+        testBtn.disabled = false;
+      }
+    },
+    { cls: 'btn', ico: 'check' }
+  );
+  return h(
+    'section',
+    { class: 'card' },
+    h('h3', { class: 'card-title' }, icon('award'), 'Azure 음성 평가 키 (레벨테스트)'),
+    h(
+      'p',
+      { class: 'hint' },
+      '레벨테스트의 발음·유창성·억양 점수는 Microsoft Azure AI Speech의 발음 평가로 매깁니다. Azure 포털에서 "Speech" 리소스를 무료(F0) 가격 책정 계층으로 만들고, "키 및 엔드포인트"의 키 1과 지역을 넣으세요. 무료 등급은 한 달에 음성 5시간까지이며, 넘으면 요금 없이 그달은 멈춥니다. 유료(S0) 계층이면 요금이 나가니 꼭 F0인지 확인하세요.'
+    ),
+    externalLink('Azure 포털', 'https://portal.azure.com/'),
+    field('키', keyInput),
+    h('label', { class: 'inline-check' }, showKey, ' 키 보기'),
+    field('지역', regionSelect, '리소스를 만들 때 고른 지역과 같아야 합니다'),
+    h('div', { class: 'row wrap' }, testBtn),
+    status,
+    btn(
+      '키 지우기',
+      () => {
+        keyInput.value = '';
+        save();
+        status.textContent = '';
+        toast('키를 지웠습니다');
+      },
+      { cls: 'btn small ghost', ico: 'trash' }
+    ),
+    h(
+      'p',
+      { class: 'hint' },
+      '녹음은 채점할 때만 Azure로 보내고 저장하지 않습니다. 같은 키를 가족 휴대폰에서 함께 쓰면 무료 5시간도 함께 씁니다.'
+    )
   );
 }
 
@@ -287,6 +364,7 @@ function appSection() {
         h('li', null, '무료 번역: MyMemory (Translated)'),
         h('li', null, '이미지: Openverse (각 이미지의 CC 라이선스)'),
         h('li', null, 'AI 기능(선택): Google Gemini API'),
+        h('li', null, '레벨테스트 발음 평가(선택): Microsoft Azure AI Speech (Speech SDK, MIT)'),
         h('li', null, '아이콘: Feather Icons (MIT)')
       )
     ),
@@ -295,5 +373,5 @@ function appSection() {
 }
 
 export function init(root) {
-  root.append(geminiSection(), myMemorySection(), speechSection(), appSection());
+  root.append(geminiSection(), azureSection(), myMemorySection(), speechSection(), appSection());
 }

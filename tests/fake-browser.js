@@ -246,7 +246,7 @@ export function buildShell(body) {
     el(
       'main',
       { id: 'views' },
-      ...['tutor', 'dict', 'translate', 'ott', 'words', 'settings'].map((v) =>
+      ...['tutor', 'dict', 'translate', 'level', 'ott', 'words', 'settings'].map((v) =>
         el('section', { id: `view-${v}`, class: 'view', hidden: true })
       )
     )

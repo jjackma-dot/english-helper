@@ -1797,3 +1797,203 @@ ul.photo-tips {
   margin: 4px 0 0;
   padding-left: 18px;
 }
+
+/* ==== 레벨테스트 ==== */
+
+.level-takers .chip.taker {
+  min-height: 48px;
+  padding: 6px 16px;
+  font-size: 1rem;
+}
+.level-takers .chip.taker .emoji,
+.level-row .emoji,
+.level-score .emoji {
+  font-size: 1.3em;
+  line-height: 1;
+}
+.btn.big {
+  min-height: 56px;
+  font-size: 1.1rem;
+}
+/* 문항 진행: 칸 7개 */
+.level-progress {
+  display: flex;
+  gap: 4px;
+}
+.level-progress span {
+  flex: 1;
+  height: 6px;
+  border-radius: 99px;
+  background: var(--surface-2);
+}
+.level-progress span.done {
+  background: var(--primary);
+}
+.level-progress span.now {
+  background: color-mix(in srgb, var(--primary) 45%, var(--surface-2));
+}
+.level-read {
+  font-size: 1.15rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+.level-read.small {
+  font-size: 1rem;
+}
+.level-photo {
+  max-height: 42vh;
+}
+.level-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.95rem;
+}
+.level-table caption {
+  font-weight: 700;
+  text-align: left;
+  padding-bottom: 6px;
+}
+.level-table td {
+  border-top: 1px solid var(--border);
+  padding: 6px 4px;
+  vertical-align: top;
+}
+.level-table td:first-child {
+  white-space: nowrap;
+  color: var(--muted);
+}
+.level-rec {
+  gap: 8px;
+}
+.level-status {
+  font-weight: 700;
+}
+.level-rec .level {
+  width: 100%;
+}
+.level-rec .chip {
+  align-self: center;
+}
+/* 결과 목록: 날짜 · 응시자 · 난이도 · 총점 · 등급 */
+.level-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+}
+.level-row-date {
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+.level-row-score {
+  margin-left: auto;
+}
+.level-row-grade {
+  font-size: 0.9rem;
+  color: var(--primary);
+  font-weight: 700;
+}
+/* 성적표 */
+.level-score {
+  gap: 4px;
+  padding: 18px 14px;
+}
+.level-big {
+  font-size: 3.2rem;
+  font-weight: 800;
+  line-height: 1.1;
+  color: var(--primary);
+}
+.level-predict {
+  display: flex;
+  justify-content: center;
+  gap: 24px;
+  margin-top: 8px;
+}
+.level-predict > div {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.level-predict b {
+  font-size: 1.25rem;
+}
+.level-band .lv,
+.level-dim .lv {
+  color: var(--primary);
+}
+.band {
+  position: relative;
+  display: flex;
+  gap: 2px;
+  margin: 10px 0 6px;
+}
+.band .seg {
+  flex: 1 1 0;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  font-size: 0.62rem;
+  font-weight: 700;
+  white-space: nowrap;
+  color: var(--muted);
+  background: var(--surface-2);
+  border-radius: 4px;
+  overflow: hidden;
+  min-width: 0;
+}
+.band .seg.on {
+  background: var(--primary);
+  color: #fff;
+}
+.band .marker {
+  position: absolute;
+  top: -6px;
+  bottom: -6px;
+  width: 3px;
+  margin-left: -1.5px;
+  background: var(--text);
+  border-radius: 2px;
+}
+.level-dims {
+  gap: 12px;
+}
+.level-dim {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.level-dim .level-bar {
+  background: var(--primary);
+  transition: none;
+}
+.level-usage .level-bar {
+  transition: none;
+}
+.level-summary {
+  white-space: pre-wrap;
+  line-height: 1.6;
+}
+.level-h {
+  margin: 8px 0 0;
+  font-size: 1.05rem;
+}
+.level-item summary {
+  cursor: pointer;
+}
+.level-transcript,
+.level-better {
+  white-space: pre-wrap;
+  line-height: 1.6;
+}
+.level-fixes {
+  margin: 0;
+  padding-left: 18px;
+}
+.level-fixes li + li {
+  margin-top: 6px;
+}
+.level-word {
+  cursor: default;
+}

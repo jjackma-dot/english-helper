@@ -9,6 +9,7 @@ import * as tutor from './views/tutor.js';
 import * as dictionary from './views/dictionary.js';
 import * as translate from './views/translate.js';
 import * as ott from './views/ott.js';
+import * as level from './views/level.js';
 import * as wordbook from './views/wordbook.js';
 import * as settings from './views/settings.js';
 
@@ -16,7 +17,8 @@ const VIEWS = {
   tutor: { title: 'AI 영어회화', mod: tutor },
   dict: { title: '사전', mod: dictionary },
   translate: { title: '번역', mod: translate },
-  ott: { title: 'OTT 듣기 도우미', mod: ott },
+  level: { title: '레벨테스트', mod: level },
+  ott: { title: 'OTT 듣기 도우미', mod: ott }, // 메뉴에서는 뺐지만 #/ott로 열 수 있다 (나중에 다시 쓸 때)
   words: { title: '단어장', mod: wordbook },
   settings: { title: '설정', mod: settings },
 };

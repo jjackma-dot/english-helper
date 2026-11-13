@@ -24,6 +24,10 @@ const DEFAULT_SETTINGS = {
   voiceBargeIn: true, // 음성 튜터 "말로 끊기": 튜터가 말하는 중에 내가 말하면 멈춘다 (스피커일 때는 메아리를 걸러 내 목소리만 알아챔)
   voiceMediaVolume: true, // 음성 튜터 "미디어 음량으로 듣기"(안드로이드): 에코 제거를 끈 마이크로 들어 통화 모드가 되지 않게 (볼륨 버튼 = 미디어 음량)
   tutor: { ...DEFAULT_TUTOR_OPTIONS },
+  azureKey: '', // 레벨테스트 발음 평가 (Azure AI Speech, 무료 F0 등급)
+  azureRegion: 'koreacentral',
+  levelTaker: '', // 레벨테스트에서 마지막으로 고른 응시자·난이도
+  levelLevel: 'normal',
 };
 
 const KEYS = {
@@ -31,6 +35,8 @@ const KEYS = {
   words: 'eh.wordbook.v1',
   dictHistory: 'eh.dictHistory.v1',
   translateHistory: 'eh.translateHistory.v1',
+  levelTests: 'eh.levelTests.v1',
+  azureUsage: 'eh.azureUsage.v1',
 };
 
 function readJson(key, fallback) {
@@ -70,6 +76,11 @@ export function updateSettings(patch) {
   writeJson(KEYS.settings, settingsCache);
   window.dispatchEvent(new CustomEvent('settings-changed', { detail: patch }));
   return settingsCache;
+}
+
+export function azureEnabled() {
+  const s = getSettings();
+  return Boolean(s.azureKey && s.azureRegion);
 }
 
 export function geminiEnabled() {
@@ -186,6 +197,34 @@ export function pushTranslateHistory(item) {
 
 export function clearTranslateHistory() {
   writeJson(KEYS.translateHistory, []);
+}
+
+/* ---------- 레벨테스트 결과 (최근 것부터, 녹음은 남기지 않는다) · Azure 사용량 (이 기기, 이번 달) ---------- */
+
+/** @returns {{month: string, seconds: number}} 이 기기에서 Azure로 보낸 음성 시간 */
+export function getAzureUsage() {
+  const u = readJson(KEYS.azureUsage, {});
+  return { month: String(u?.month ?? ''), seconds: Math.max(0, Number(u?.seconds) || 0) };
+}
+
+/** 보낸 음성 시간을 더한다 (달이 바뀌면 처음부터) */
+export function addAzureUsage(seconds, month) {
+  const u = getAzureUsage();
+  const next = u.month === month ? u.seconds + seconds : seconds;
+  writeJson(KEYS.azureUsage, { month, seconds: Math.max(0, next) });
+}
+
+export function getLevelTests() {
+  const list = readJson(KEYS.levelTests, []);
+  return Array.isArray(list) ? list : [];
+}
+
+/** 결과를 넣거나(같은 at이면) 바꾼다 */
+export function saveLevelTest(result) {
+  const list = getLevelTests().filter((x) => x.at !== result.at);
+  list.unshift(result);
+  list.sort((a, b) => b.at - a.at);
+  writeJson(KEYS.levelTests, list.slice(0, 20));
 }
 
 export function clearAllData() {
