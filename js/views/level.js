@@ -1,5 +1,6 @@
 // 레벨테스트: 토익스피킹과 비슷한 다섯 유형(문장 읽기·사진 묘사·질문에 답하기·표 보고 답하기·의견 말하기)을 학교·일상 주제로
-// 7문항, 약 10분 안에 본다. 응시자(가족)와 난이도(일반·쉬움)를 고르면 문제 은행에서 최근에 풀지 않은 문제를 섞어 낸다.
+// 7문항, 약 10분 안에 본다. 응시자(가족)와 난이도(일반·쉬움)를 고르면 문제 은행에서 최근에 풀지 않은 문제를 섞어 낸다
+// (사진 묘사의 사진은 앱에 넣어 둔 것이라 바로 뜬다).
 // 답은 문항마다 녹음해 Azure 음성 평가(발음·유창성·억양)와 Gemini(문법·어휘·과제 수행)로 채점하고, 총점을 토익스피킹 점수·등급과
 // OPIc 등급으로 예상해 성적표로 보여 준다. 결과(녹음 빼고)는 이 기기에 남고, 목록에서 누르면 다시 본다.
 
@@ -27,6 +28,7 @@ import {
   opicBands,
   opicLevel,
   partOf,
+  pictureUrl,
   promptText,
   readCoverage,
   recentBankIds,
@@ -38,14 +40,12 @@ import {
 } from '../lib/level.js';
 import { assessSpeech } from '../services/azure-speech.js';
 import { gradeAnswer, summarize } from '../services/level-test.js';
-import { searchImages } from '../services/dictionary.js';
 import { recordingSupported, startRecording } from '../services/recorder.js';
 import { primeSpeech, speak, stopSpeaking } from '../speech.js';
 import { keepAwake } from '../services/wake-lock.js';
 import { tappableEnglish } from '../components/word-sheet.js';
 
 const SOURCE = '레벨테스트';
-const PICTURE_WAIT_MS = 4000; // 사진이 이만큼 안에 안 오면 글 설명으로 대신한다
 
 let body;
 let stage = 'home'; // home | test | paused | grading | report
@@ -248,23 +248,12 @@ function startTest(takerId, level) {
     idx: 0,
     answers: tasks.map(() => ({ status: 'none' })),
     queue: Promise.resolve(),
-    pictureReady: null,
   };
-  test.pictureReady = loadPicture(test);
+  // 사진 묘사의 사진을 미리 읽어 둔다 (서비스 워커에 저장돼 있지만, 처음 설치 전이면 지금 받아 둔다)
+  const pic = tasks.find((x) => x.part === 'picture');
+  if (pic?.file && typeof Image === 'function') new Image().src = pictureUrl(pic.file);
   keepAwake('level', true);
   showTask(0);
-}
-
-/** 사진 묘사용 사진을 미리 찾아 둔다 (못 찾으면 글 설명으로 대신한다) */
-async function loadPicture(t) {
-  const pic = t.tasks.find((x) => x.part === 'picture');
-  try {
-    const list = await searchImages(pic.query);
-    const first = list.find((x) => x.full || x.thumb);
-    if (first) Object.assign(pic, { image: first.full || first.thumb, credit: first.credit, link: first.link });
-  } catch {
-    /* 사진 없이 */
-  }
 }
 
 function progressBar(i) {
@@ -285,26 +274,17 @@ async function promptView(task) {
   switch (task.part) {
     case 'read':
       return h('p', { class: 'level-read', lang: 'en' }, task.text);
-    case 'picture': {
-      // 사진이 아직 안 왔으면 잠깐 기다린다
-      await Promise.race([test.pictureReady, new Promise((r) => setTimeout(r, PICTURE_WAIT_MS))]);
-      if (!task.image)
-        return h(
-          'p',
-          { class: 'level-read' },
-          `(사진을 불러오지 못했어요) 이런 장면을 떠올리며 설명하세요: ${task.fallback}`
-        );
+    case 'picture':
       return h(
         'div',
         { class: 'stack tight' },
         h(
           'div',
           { class: 'photo-frame' },
-          h('img', { class: 'photo-thumb level-photo', src: task.image, alt: task.fallback })
+          h('img', { class: 'photo-thumb level-photo', src: pictureUrl(task.file), alt: task.fallback })
         ),
-        task.credit ? h('p', { class: 'muted small' }, `사진: ${task.credit} (Openverse)`) : null
+        task.credit ? h('p', { class: 'muted small' }, `사진: ${task.credit}`) : null
       );
-    }
     case 'respond':
       return h(
         'div',

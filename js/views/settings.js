@@ -365,6 +365,7 @@ function appSection() {
         h('li', null, '이미지: Openverse (각 이미지의 CC 라이선스)'),
         h('li', null, 'AI 기능(선택): Google Gemini API'),
         h('li', null, '레벨테스트 발음 평가(선택): Microsoft Azure AI Speech (Speech SDK, MIT)'),
+        h('li', null, '레벨테스트 사진: Wikimedia Commons (각 사진의 CC 라이선스, 사진 아래 출처 표시)'),
         h('li', null, '아이콘: Feather Icons (MIT)')
       )
     ),

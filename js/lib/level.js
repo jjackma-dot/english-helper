@@ -96,9 +96,9 @@ export function buildTest(level, recent = new Set(), rand = Math.random) {
       id: pic[0],
       prep: t.picture[0],
       answer: t.picture[1],
-      query: pic[1],
+      file: pic[1],
       fallback: pic[2],
-      image: '',
+      credit: pic[3] || '',
     },
     ...qs[2].map((question, k) => ({
       part: 'respond',
@@ -123,6 +123,11 @@ export function buildTest(level, recent = new Set(), rand = Math.random) {
     { part: 'opinion', id: op[0], prep: t.opinion[0], answer: t.opinion[1], question: op[1] },
   ];
   return { level: lv, bankIds: [read[0], pic[0], qs[0], info[0], op[0]], tasks };
+}
+
+/** 앱에 넣어 둔 사진의 주소 (samples/pictures/…, 서비스 워커가 미리 저장해 두므로 바로 뜬다) */
+export function pictureUrl(file) {
+  return new URL(`../../${file}`, import.meta.url).href;
 }
 
 /** 과제에서 응시자에게 보여 준(들려준) 지시문 (성적표·채점 요청용) */

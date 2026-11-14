@@ -17,6 +17,7 @@ import {
   opicBands,
   opicLevel,
   parseAzureResult,
+  pictureUrl,
   promptText,
   readCoverage,
   recentBankIds,
@@ -53,6 +54,11 @@ test('응시자 넷, 난이도 둘, 유형 다섯이고 문제 은행은 유형�
     }
   }
   ids.push(...PICTURES.map((x) => x[0]));
+  assert.ok(PICTURES.length >= 8);
+  for (const [id, file, desc] of PICTURES) {
+    assert.equal(file, `samples/pictures/${id}.jpg`, '사진은 앱에 넣어 둔 파일');
+    assert.ok(desc.length > 10, '장면 설명');
+  }
   assert.equal(new Set(ids).size, ids.length, '문제 id가 겹친다');
   for (const [, , qs] of [...QSETS.normal, ...QSETS.easy]) assert.equal(qs.length, 3, '질문에 답하기는 질문 셋');
   assert.equal(takerOf('boar').emoji, '🐗');
@@ -76,7 +82,8 @@ test('buildTest: 유형 순서대로 7문항(질문에 답하기 셋)을 만들�
   assert.equal(t.tasks[5].read, 30, '표 읽는 시간');
   assert.equal(t.bankIds.length, 5);
   assert.equal(t.tasks[0].reference, t.tasks[0].text, '문장 읽기는 읽을 글을 Azure에 준다');
-  assert.ok(t.tasks[1].query && t.tasks[1].fallback);
+  assert.ok(t.tasks[1].file.startsWith('samples/pictures/') && t.tasks[1].fallback);
+  assert.match(pictureUrl(t.tasks[1].file), /\/samples\/pictures\/p\d+\.jpg$/);
   assert.deepEqual(
     t.tasks.slice(2, 5).map((x) => x.n),
     [1, 2, 3]

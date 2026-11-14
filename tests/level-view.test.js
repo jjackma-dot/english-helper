@@ -248,10 +248,11 @@ test('시작: 멧돼지·일반을 고르면 문장 읽기부터 7문항을 차�
   assert.equal(timeText(), '남은 시간 0:35');
   doneBtn().click();
 
-  // 2번 사진 묘사: Openverse 사진
+  // 2번 사진 묘사: 앱에 넣어 둔 사진이 바로 뜬다 (외부 검색 없음)
   await until(() => text(view).includes('2 / 7 · 사진 묘사') && byClass('level-photo').length, '사진');
-  assert.equal(byClass('level-photo')[0].getAttribute('src'), 'https://img.example/f.jpg');
-  assert.match(text(view), /사진: Ann · CC BY \(Openverse\)/);
+  assert.match(byClass('level-photo')[0].getAttribute('src'), /\/samples\/pictures\/p\d+\.jpg$/);
+  assert.ok(byClass('level-photo')[0].getAttribute('alt').length > 10, '장면 설명이 대체 글');
+  assert.equal(gemini.pictures, 0, '사진을 밖에서 찾지 않는다');
   await answer(6);
 
   // 3~5번 질문에 답하기: 상황 설명 뒤 질문을 읽어 준다
