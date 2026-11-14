@@ -67,6 +67,15 @@ const ASSETS = [
   'js/worklets/pcm16-capture.js',
   'samples/sample-en.srt',
   'samples/sample-ko.srt',
+  'samples/pictures/p1.jpg',
+  'samples/pictures/p3.jpg',
+  'samples/pictures/p6.jpg',
+  'samples/pictures/p10.jpg',
+  'samples/pictures/p11.jpg',
+  'samples/pictures/p13.jpg',
+  'samples/pictures/p14.jpg',
+  'samples/pictures/p17.jpg',
+  'samples/pictures/p20.jpg',
 ];
 
 self.addEventListener('install', (event) => {

@@ -283,7 +283,14 @@ async function promptView(task) {
           { class: 'photo-frame' },
           h('img', { class: 'photo-thumb level-photo', src: pictureUrl(task.file), alt: task.fallback })
         ),
-        task.credit ? h('p', { class: 'muted small' }, `사진: ${task.credit}`) : null
+        task.credit
+          ? h(
+              'p',
+              { class: 'muted small' },
+              '사진: ',
+              task.page ? h('a', { href: task.page, target: '_blank', rel: 'noopener' }, task.credit) : task.credit
+            )
+          : null
       );
     case 'respond':
       return h(

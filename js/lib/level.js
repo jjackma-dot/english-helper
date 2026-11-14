@@ -99,6 +99,7 @@ export function buildTest(level, recent = new Set(), rand = Math.random) {
       file: pic[1],
       fallback: pic[2],
       credit: pic[3] || '',
+      page: pic[4] || '',
     },
     ...qs[2].map((question, k) => ({
       part: 'respond',

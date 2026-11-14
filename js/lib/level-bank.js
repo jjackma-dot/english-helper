@@ -106,32 +106,17 @@ export const READ = {
   ],
 };
 
-/** 2. 사진 묘사 (Describe a picture): 앱에 넣어 둔 사진 [id, 파일, 장면 설명(채점에 알려 주고 사진이 없을 때 대신 보여 줌), 출처] */
+/** 2. 사진 묘사 (Describe a picture): 앱에 넣어 둔 사진 [id, 파일, 장면 설명(채점에 알려 줌·대체 글), 출처(작가 · 라이선스), 출처 페이지] */
 export const PICTURES = [
-  ['p1', 'samples/pictures/p1.jpg', 'students studying together at a table in a library', ''],
-  ['p2', 'samples/pictures/p2.jpg', 'a family having a picnic on the grass in a park', ''],
-  ['p3', 'samples/pictures/p3.jpg', 'people waiting at a bus stop on a city street', ''],
-  ['p4', 'samples/pictures/p4.jpg', 'people buying vegetables at an outdoor market', ''],
-  ['p5', 'samples/pictures/p5.jpg', 'children playing at a playground', ''],
-  ['p6', 'samples/pictures/p6.jpg', 'a barista making coffee in a cafe', ''],
-  ['p7', 'samples/pictures/p7.jpg', 'a teacher and students in a classroom', ''],
-  ['p8', 'samples/pictures/p8.jpg', 'people cooking together in a kitchen', ''],
-  ['p9', 'samples/pictures/p9.jpg', 'people on a train station platform', ''],
-  ['p10', 'samples/pictures/p10.jpg', 'a family relaxing on a sandy beach', ''],
-  ['p11', 'samples/pictures/p11.jpg', 'people riding bicycles in a park', ''],
-  ['p12', 'samples/pictures/p12.jpg', 'a person shopping with a cart in a supermarket', ''],
-  ['p13', 'samples/pictures/p13.jpg', 'friends at a birthday party with a cake', ''],
-  ['p14', 'samples/pictures/p14.jpg', 'a person walking a dog in a park', ''],
-  ['p15', 'samples/pictures/p15.jpg', 'people hiking on a mountain trail', ''],
-  ['p16', 'samples/pictures/p16.jpg', 'students eating lunch in a school cafeteria', ''],
-  ['p17', 'samples/pictures/p17.jpg', 'people camping with a tent near a campfire', ''],
-  ['p18', 'samples/pictures/p18.jpg', 'friends having dinner at a restaurant', ''],
-  ['p19', 'samples/pictures/p19.jpg', 'people painting pictures in an art class', ''],
-  ['p20', 'samples/pictures/p20.jpg', 'people with umbrellas on a rainy street', ''],
-  ['p21', 'samples/pictures/p21.jpg', 'a person watering flowers in a garden', ''],
-  ['p22', 'samples/pictures/p22.jpg', 'people buying food at a street market stall', ''],
-  ['p23', 'samples/pictures/p23.jpg', 'people reading and relaxing in a cafe', ''],
-  ['p24', 'samples/pictures/p24.jpg', 'people playing basketball on an outdoor court', ''],
+  ['p1', 'samples/pictures/p1.jpg', 'university students studying together at long tables in a bright library reading room', 'Gary Todd · CC0', 'https://commons.wikimedia.org/wiki/File:Sias_Library_-_Students_Studying_2017.jpg'],
+  ['p3', 'samples/pictures/p3.jpg', 'several people in winter coats waiting at a bus shelter on a snowy city street', 'Frank Hank · CC BY-SA 3.0', 'https://commons.wikimedia.org/wiki/File:People_waiting_at_bus_stop.jpg'],
+  ['p6', 'samples/pictures/p6.jpg', 'a barista in a black shirt making coffee at an espresso machine in a cafe', 'Shixart1985 · CC BY 2.0', 'https://commons.wikimedia.org/wiki/File:Barista_prepares_coffee_in_modern_caf%C3%A9_with_steam_rising_during_busy_morning_hours.jpg'],
+  ['p10', 'samples/pictures/p10.jpg', 'five children sitting together on a sandy beach dune with tall grass behind them', 'Ltlbean · CC BY-SA 4.0', 'https://commons.wikimedia.org/wiki/File:Family_Beach_pic.jpg'],
+  ['p11', 'samples/pictures/p11.jpg', 'three people riding bicycles along a paved path through a green park', 'vastateparksstaff · CC BY 2.0', 'https://commons.wikimedia.org/wiki/File:Riding_bikes_ar_Claytor_Lake_State_Park_(13629104625).jpg'],
+  ['p13', 'samples/pictures/p13.jpg', 'children wearing party hats gathered around a birthday cake with candles in a decorated room', 'suyash · Public domain', 'https://commons.wikimedia.org/wiki/File:Birthday_party.jpg'],
+  ['p14', 'samples/pictures/p14.jpg', 'a person walking two golden retriever dogs on a leash along a lakeshore beach', 'vastateparksstaff · CC BY 2.0', 'https://commons.wikimedia.org/wiki/File:Dog_walking_at_the_beach_along_the_Bayview_Trail_at_Mason_Neck_(14732270891).jpg'],
+  ['p17', 'samples/pictures/p17.jpg', 'a man and a woman sitting in camp chairs beside a campfire with tents behind them', 'GlacierNPS · Public domain', 'https://commons.wikimedia.org/wiki/File:Keep_your_Campfire_under_Control_(43197260704).jpg'],
+  ['p20', 'samples/pictures/p20.jpg', 'pedestrians with umbrellas crossing a busy city street on a rainy day between tall buildings', 'Raman Patel · CC BY 3.0', 'https://commons.wikimedia.org/wiki/File:West_33rd_St,_NY_-_panoramio.jpg'],
 ];
 
 /**
