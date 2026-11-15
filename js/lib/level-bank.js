@@ -214,6 +214,13 @@ export const PICTURES = [
     'https://commons.wikimedia.org/wiki/File:Backpackers_following_a_dirt_trail_(Unsplash).jpg',
   ],
   [
+    'p16',
+    'samples/pictures/p16.jpg',
+    'students in school uniforms sitting around a table eating lunch from plates in a school cafeteria',
+    'Fotos GOVBA from Bahia/Brasil · CC BY 2.0',
+    'https://commons.wikimedia.org/wiki/File:Merenda_Escolar_(6121048252).jpg',
+  ],
+  [
     'p17',
     'samples/pictures/p17.jpg',
     'a man and a woman sitting in camp chairs beside a campfire with tents behind them',
@@ -226,6 +233,13 @@ export const PICTURES = [
     'a group of friends sitting around a restaurant table with a red tablecloth, wine glasses and menus, wine bottles on the wall',
     'PattayaPatrol · CC BY-SA 4.0',
     'https://commons.wikimedia.org/wiki/File:DSC_7074_A_group_of_friends_enjoying_dinner_and_wine_at_a_cozy_restaurant_seated_around_a_table_with_a_red_tablecloth_and_bottles_displayed_on_the_wall_behind_them.jpg',
+  ],
+  [
+    'p19',
+    'samples/pictures/p19.jpg',
+    'students in school uniforms drawing pictures on large sheets of paper at their desks during an art class',
+    'Olusola David, Ayibiowu · CC BY 4.0',
+    'https://commons.wikimedia.org/wiki/File:Students_making_drawings_during_the_Art_Outreach_At_Aje_Compreshensive_Senior_High_School.jpg',
   ],
   [
     'p20',
