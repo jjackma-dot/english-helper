@@ -281,7 +281,16 @@ async function promptView(task) {
         h(
           'div',
           { class: 'photo-frame' },
-          h('img', { class: 'photo-thumb level-photo', src: pictureUrl(task.file), alt: task.fallback })
+          h('img', {
+            class: 'photo-thumb level-photo',
+            src: pictureUrl(task.file),
+            alt: task.fallback,
+            // 앱에 넣어 둔 사진이라 거의 없지만, 못 열면 장면 설명을 대신 보여 주고 시험은 이어 간다
+            onerror: (e) =>
+              e.currentTarget.replaceWith(
+                h('p', { class: 'level-read' }, `이런 장면을 떠올리며 설명하세요: ${task.fallback}`)
+              ),
+          })
         ),
         task.credit
           ? h(

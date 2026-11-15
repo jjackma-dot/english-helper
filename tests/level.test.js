@@ -1,6 +1,8 @@
 // js/lib/level.js: 레벨테스트 문항 구성(매번 다르게, 최근 문제 제외), Azure 결과 읽기·합치기, 점수 모으기, 토익스피킹·OPIc 환산, 사용량
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
 import {
   DIMENSIONS,
   FREE_SECONDS_PER_MONTH,
@@ -55,9 +57,17 @@ test('응시자 넷, 난이도 둘, 유형 다섯이고 문제 은행은 유형�
   }
   ids.push(...PICTURES.map((x) => x[0]));
   assert.ok(PICTURES.length >= 8);
-  for (const [id, file, desc] of PICTURES) {
+  const root = path.resolve(import.meta.dirname, '..');
+  const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
+  for (const [id, file, desc, credit, page] of PICTURES) {
     assert.equal(file, `samples/pictures/${id}.jpg`, '사진은 앱에 넣어 둔 파일');
     assert.ok(desc.length > 10, '장면 설명');
+    const bytes = fs.readFileSync(path.join(root, file));
+    assert.deepEqual([...bytes.subarray(0, 3)], [0xff, 0xd8, 0xff], `${file}: JPEG`);
+    assert.ok(bytes.length > 10e3 && bytes.length < 200e3, `${file}: ${bytes.length}B (작게)`);
+    assert.ok(sw.includes(`'${file}'`), `${file}: 서비스 워커가 미리 저장`);
+    assert.match(credit, / · (CC0|Public domain|CC BY(-SA)? \d\.\d)$/, `${id}: 출처와 라이선스`);
+    assert.match(page, /^https:\/\/commons\.wikimedia\.org\/wiki\/File:/, `${id}: 출처 페이지`);
   }
   assert.equal(new Set(ids).size, ids.length, '문제 id가 겹친다');
   for (const [, , qs] of [...QSETS.normal, ...QSETS.easy]) assert.equal(qs.length, 3, '질문에 답하기는 질문 셋');
