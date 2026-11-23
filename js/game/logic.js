@@ -223,7 +223,10 @@ export function sameAnswer(widget, input, expected) {
     case 'keypad':
       return String(input ?? '').replace(/\D/g, '') === String(expected);
     case 'choice':
+    case 'shape':
       return input === expected;
+    case 'dial':
+      return Number(input) === Number(expected);
     case 'multi':
       return Array.isArray(input) && input.length === expected.length && expected.every((x) => input.includes(x));
     case 'word': {

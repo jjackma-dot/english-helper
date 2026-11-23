@@ -514,6 +514,9 @@ export function momo(mood = 'calm') {
 }
 
 export const SUSPECT_ART = { bolt, zeek, mira, momo };
+/** 용의자 그림을 카드에 꼭 맞게 담는 viewBox (인물마다 크기·기준점이 다르다) */
+export const SUSPECT_VIEW = { bolt: '-135 -335 270 345', mira: '-125 -368 250 378', zeek: '-100 -75 200 155', momo: '-75 -125 150 135' };
+export const suspectIcon = (id, mood) => svg(SUSPECT_VIEW[id], { class: 'gm-sus-art', 'aria-hidden': 'true' }, SUSPECT_ART[id](mood));
 
 /** 로봇 강아지 스파키 (발밑 가운데 기준) */
 export function sparky(awake = true) {
@@ -948,8 +951,8 @@ export function room2(st) {
     at(990, 300, 0.8, g({ class: 'gm-float' }, pip('happy'))),
   ];
   const front = [
-    path('M-420 1000Q-260 640 -60 560Q40 700 160 1000Z', '#2c8a3c'),
-    path('M-260 1000Q-120 760 60 700Q100 840 120 1000Z', '#3fae5a'),
+    path('M-420 1000Q-300 820 -120 790Q-40 880 -10 1000Z', '#2c8a3c'),
+    path('M-300 1000Q-200 880 -60 860Q-10 930 0 1000Z', '#3fae5a'),
     path(`M${W + 420} 1000Q${W + 300} 760 ${W + 90} 700Q${W - 10} 840 ${W - 60} 1000Z`, '#2c8a3c'),
     path('M260 0q20 120 -20 220', 'none', { stroke: '#3fae5a', 'stroke-width': 6 }),
     path('M1300 0q-30 90 10 170', 'none', { stroke: '#3fae5a', 'stroke-width': 6 }),
@@ -1540,6 +1543,14 @@ export function portrait(who, mood) {
   if (who === 'pip') face = pip(mood || 'talk');
   else if (who === 'luna') face = luna();
   else if (SUSPECT_ART[who]) face = SUSPECT_ART[who](mood);
+  else if (who === 'narrator')
+    face = g(
+      null,
+      circ(0, 0, 44, '#1b1448', { stroke: '#7a5cff', 'stroke-width': 4 }),
+      s('polygon', { points: starPoints(0, -2, 26, 11), fill: '#ffd23f' }),
+      circ(-24, 22, 3, '#ffffff'),
+      circ(26, -24, 2.5, '#ffffff')
+    );
   else
     face = g(
       null,

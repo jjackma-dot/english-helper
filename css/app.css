@@ -2209,7 +2209,7 @@ body.gm-lock {
   top: 0;
   left: 0;
   height: 100%;
-  overflow: visible;
+  overflow: hidden;
   pointer-events: none;
   will-change: transform;
 }
@@ -2846,6 +2846,7 @@ body.gm-lock {
   vertical-align: top;
 }
 .gm-log td:first-child {
+  white-space: nowrap;
   font-weight: 800;
   color: #7df9ff;
   font-variant-numeric: tabular-nums;
@@ -3295,6 +3296,7 @@ body.gm-lock {
 }
 .gw-dial {
   display: flex;
+  flex-direction: row;
   align-items: center;
   justify-content: center;
   gap: 14px;
@@ -3638,6 +3640,16 @@ body.gm-lock {
   100% {
     opacity: 0.2;
   }
+}
+
+/* 게임 중에는 알림을 위쪽에 (아래 버튼을 가리지 않게) */
+body.gm-lock .toast {
+  top: calc(58px + env(safe-area-inset-top));
+  bottom: auto;
+  transform: translate(-50%, -16px);
+}
+body.gm-lock .toast.show {
+  transform: translate(-50%, 0);
 }
 
 @media (prefers-reduced-motion: reduce) {

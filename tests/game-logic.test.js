@@ -123,6 +123,12 @@ test('잠금 입력 비교', () => {
   assert.ok(sameAnswer('colors', ['red', 'blue'], ['red', 'blue']));
   assert.ok(!sameAnswer('colors', ['blue', 'red'], ['red', 'blue']));
   assert.ok(sameAnswer('keypad', '7 2 5', '725'));
+  assert.ok(sameAnswer('shape', 'heart', 'heart'));
+  assert.ok(!sameAnswer('shape', 'star', 'heart'));
+  assert.ok(sameAnswer('dial', 6, 6));
+  assert.ok(sameAnswer('dial', '12', 12));
+  assert.ok(!sameAnswer('dial', 5, 6));
+  assert.ok(sameAnswer('choice', 'mars', 'mars'));
   assert.ok(sameAnswer('word', 'Grape', ['grapes', 'grape']));
   assert.ok(!sameAnswer('word', '', ['grapes']));
   assert.ok(sameAnswer('multi', ['b', 'a'], ['a', 'b']));
@@ -239,6 +245,10 @@ test('1~4명, 모든 수준 조합, 여러 시드에서 단서·잠금·힌트·
             x.hints.forEach((h, i) => checkText(h, `${where} 힌트${i + 1}`, true));
             checkText(x.def.done, `${where} 완료`, true);
             checkWidget(x.lock, where);
+            if (x.lock.widget !== 'voice') {
+              const e = x.lock.expected;
+              assert.ok(sameAnswer(x.lock.widget, Array.isArray(e) && x.lock.widget === 'word' ? e[0] : e, e), `${where}: 정답이 통과하지 않음`);
+            }
             if (x.lock.voice?.say) assert.doesNotMatch(x.lock.voice.say, BAD_TEXT);
             assert.equal(x.letter, room.word[x.p]);
           }

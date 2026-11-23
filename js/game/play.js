@@ -45,8 +45,7 @@ import {
   suspectOf,
 } from './story.js';
 import { sparkyBarks } from './puzzles.js';
-import { ROOM_ART, SUSPECT_ART, closeup, defs, finale as finaleArt, portrait } from './art.js';
-import { svg } from './svg.js';
+import { ROOM_ART, closeup, defs, finale as finaleArt, portrait, suspectIcon } from './art.js';
 import { createScene } from './scene.js';
 import { createWidget, voiceInput } from './widgets.js';
 import { playMelody, setSound, sfx } from './sfx.js';
@@ -127,7 +126,8 @@ export function openGame(host, save, { onExit, onNewMission }) {
   function bilingual(t, lv, { speaker = 'narrator', cls = '', big = false } = {}) {
     const en = levelRank(lv) >= 2 ? tappableEnglish(t.en, { source: '영어 게임', tag: 'p', cls: `gm-en ${cls}` }) : h('p', { class: `gm-en ${cls}`, lang: 'en' }, t.en);
     if (big) en.classList?.add('big');
-    const ko = t.ko ? h('p', { class: 'gm-ko', hidden: lv !== 'basic' && !showKo }, t.ko) : null;
+    // 한국어는 그 글의 수준을 따른다: Basic은 늘 보이고, IM1·IM2는 버튼으로 (같은 폰에 Basic이 있어도 IM2 문제는 그대로 도전)
+    const ko = t.ko ? h('p', { class: 'gm-ko', hidden: lv !== 'basic' }, t.ko) : null;
     const koBtn =
       t.ko && lv !== 'basic'
         ? h(
@@ -293,8 +293,8 @@ export function openGame(host, save, { onExit, onNewMission }) {
 
   const crystalsFound = () => Object.values(save.crystals).reduce((a, x) => a + x.length, 0);
   function updateHud() {
-    const r = save.room;
-    if (save.stage === 'finale' || save.stage === 'done') titleEl.replaceChildren(h('b', null, 'Core Room'), h('small', null, '코어 룸 · 범인 찾기'));
+    const r = save.stage === 'outro' ? save.room + 1 : save.room;
+    if (save.stage.startsWith('finale') || save.stage === 'done' || r >= ROOM_COUNT) titleEl.replaceChildren(h('b', null, 'Core Room'), h('small', null, '코어 룸 · 범인 찾기'));
     else titleEl.replaceChildren(h('b', null, `${r + 1} · ${ROOMS[r].title.en}`), h('small', null, ROOMS[r].title.ko));
     const left = STORM_MS - save.playMs;
     timeChip.hidden = !prefs.timer;
@@ -311,6 +311,7 @@ export function openGame(host, save, { onExit, onNewMission }) {
     if (save.stage === 'finale') {
       bottom.append(
         h('button', { type: 'button', class: 'gm-tab', onclick: () => openEvidence() }, h('span', { class: 'gm-tab-ico' }, '🗂'), '증거'),
+        h('button', { type: 'button', class: 'gm-tab', onclick: () => openSuspects() }, h('span', { class: 'gm-tab-ico' }, '🕵️'), '용의자'),
         pipBtn,
         h('button', { type: 'button', class: 'gm-tab accent', onclick: () => openAccuse() }, h('span', { class: 'gm-tab-ico' }, '👉'), '범인 지목')
       );
@@ -367,11 +368,23 @@ export function openGame(host, save, { onExit, onNewMission }) {
     return { dark: r === 0 && !save.open[0] && !all, radius: 110 + 45 * solved.length + (solved.includes(1) ? 60 : 0) + (devLv() === 'basic' ? 40 : 0) };
   }
 
+  /** 화면 읽기 프로그램용 물체 이름 */
+  function labelled(data, r) {
+    const names = { door: '문 (비밀 단어)', shuttle: '셔틀', momobed: '모모의 침대', pedestal: '별의 심장 받침대' };
+    for (const s of SUSPECTS) names[s.id] = `${s.ko} (${s.name})`;
+    for (const x of game.rooms[r]?.pairs ?? []) {
+      names[x.def.clue.obj] = x.def.clue.ko;
+      names[x.def.lock.obj] = x.def.lock.ko;
+    }
+    for (const hs of data.hot) hs.label = names[hs.id] || hs.id;
+    return data;
+  }
+
   function renderRoom() {
     const r = save.room;
     const solved = roomSet('solved');
     const lit = litState();
-    scene.render(ROOM_ART[r]({ lit: lit.dark ? 0 : 1, solved, letters: knownLetters(game, r, solved), open: Boolean(save.open[r]) }), { found: roomSet('crystals') });
+    scene.render(labelled(ROOM_ART[r]({ lit: lit.dark ? 0 : 1, solved, letters: knownLetters(game, r, solved), open: Boolean(save.open[r]) }), r), { found: roomSet('crystals') });
     scene.setDark(lit.dark, lit.radius);
     updateMarks();
     updateHud();
@@ -787,7 +800,10 @@ export function openGame(host, save, { onExit, onNewMission }) {
       scene.render(ROOM_ART[r + 1]({ lit: 1, solved: [], letters: ['', '', '', ''] }), { found: [] });
       scene.setDark(false);
       scene.enter();
-    } else showFinaleScene();
+    } else {
+      showFinaleScene();
+      scene.enter();
+    }
     await talk(ev.lines);
     await evidenceCard(r);
     save.room = r + 1;
@@ -911,7 +927,7 @@ export function openGame(host, save, { onExit, onNewMission }) {
     const bubble = (from, t, lv) => {
       const b = h('div', { class: `gm-bubble ${from}` }, from === 'them' ? portrait(speaker, 'talk') : null, h('div', null, h('p', { lang: 'en' }, t.en), t.ko && from === 'them' && (lv === 'basic' || showKo) ? h('small', null, t.ko) : t.ko && from === 'them' ? h('details', null, h('summary', null, '한국어'), h('small', null, t.ko)) : null));
       log.append(b);
-      b.scrollIntoView?.({ block: 'end', behavior: 'smooth' });
+      log.scrollTop = log.scrollHeight;
       return b;
     };
     const cardBox = h('div', { class: 'gm-cards' });
@@ -1251,7 +1267,7 @@ export function openGame(host, save, { onExit, onNewMission }) {
 
   const moods = {};
   function showFinaleScene() {
-    scene.render(finaleArt({ restored: save.stage === 'done' || save.restored, moods }), { found: [] });
+    scene.render(labelled(finaleArt({ restored: save.stage === 'done' || save.restored, moods }), ROOM_COUNT), { found: [] });
     scene.setDark(false);
     scene.marks({});
   }
@@ -1275,12 +1291,36 @@ export function openGame(host, save, { onExit, onNewMission }) {
         h(
           'div',
           { class: 'gm-suspect' },
-          svg('-160 -380 320 420', { class: 'gm-sus-art', 'aria-hidden': 'true' }, SUSPECT_ART[s.id]()),
+          suspectIcon(s.id),
           h('b', null, s.name),
           h('small', { lang: 'en' }, `${s.size}, ${s.color}, ${s.kind === 'robot' ? 'robot' : 'not a robot'}`),
           easy ? h('small', null, `${s.size === 'big' ? '큼' : '작음'} · ${TRAIT[s.color].ko} · ${s.kind === 'robot' ? '로봇' : '로봇 아님'}`) : null
         )
       )
+    );
+  }
+
+  /** 용의자 네 명 (화면을 밀지 않아도 바로 물어볼 수 있게) */
+  function openSuspects() {
+    panel(
+      '🕵️ Suspects',
+      [
+        h('p', { class: 'gm-lead' }, '누구에게 물어볼까요? 한 명은 거짓말을 하고 있어요.'),
+        h(
+          'div',
+          { class: 'gm-pickgrid' },
+          SUSPECTS.map((s) =>
+            h(
+              'button',
+              { type: 'button', class: 'gm-pick', onclick: () => openInterview(s.id) },
+              suspectIcon(s.id),
+              h('b', null, s.name),
+              h('small', null, `${s.ko} · ${(save.interviewed[s.id] || []).length}/${QUESTIONS.length} 질문`)
+            )
+          )
+        ),
+      ],
+      { sub: '용의자에게 묻기' }
     );
   }
 
@@ -1322,7 +1362,7 @@ export function openGame(host, save, { onExit, onNewMission }) {
         h(
           'div',
           { class: 'gm-pickgrid' },
-          SUSPECTS.map((s) => h('button', { type: 'button', class: 'gm-pick', onclick: () => pick(s.id) }, svg('-160 -380 320 420', { class: 'gm-sus-art', 'aria-hidden': 'true' }, SUSPECT_ART[s.id]()), h('b', null, s.name), h('small', null, s.ko)))
+          SUSPECTS.map((s) => h('button', { type: 'button', class: 'gm-pick', onclick: () => pick(s.id) }, suspectIcon(s.id), h('b', null, s.name), h('small', null, s.ko)))
         ),
         h('button', { type: 'button', class: 'btn ghost', onclick: () => openEvidence() }, '🗂 증거 다시 보기'),
       ],
@@ -1403,6 +1443,7 @@ export function openGame(host, save, { onExit, onNewMission }) {
             closePanel();
             moods[id] = 'sad';
             showFinaleScene();
+            scene.focus(id);
             await talk(CONFESSION[id], { moods });
             await talk([{ who: 'narrator', easy: RESOLUTION[id], hard: RESOLUTION[id] }, ...ENDING]);
             await shieldStep();
@@ -1542,11 +1583,19 @@ export function openGame(host, save, { onExit, onNewMission }) {
     }
     if (save.stage === 'play') {
       renderRoom();
+      if (levelRank(devLv()) <= 1) {
+        const pairs = game.rooms[save.room].pairs;
+        const clue = pairs.find((x) => local().includes(x.clueOwner) && !roomSet('clues').includes(x.p));
+        const lock = pairs.find((x) => local().includes(x.lockOwner) && !roomSet('solved').includes(x.p));
+        const obj = clue?.def.clue.obj ?? lock?.def.lock.obj;
+        if (obj) setTimeout(() => scene.focus(obj), 500);
+      }
       return;
     }
     if (save.stage === 'outro') return roomOutro();
     if (save.stage === 'finale-intro') {
       showFinaleScene();
+      scene.focus('pedestal', { animate: false });
       clear(bottom);
       updateHud();
       await talk(FINALE_INTRO, { moods: { pip: 'worried' } });
@@ -1555,6 +1604,7 @@ export function openGame(host, save, { onExit, onNewMission }) {
     }
     if (save.stage === 'finale') {
       showFinaleScene();
+      scene.focus('pedestal', { animate: false });
       updateHud();
       return;
     }

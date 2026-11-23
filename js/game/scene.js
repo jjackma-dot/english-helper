@@ -6,8 +6,10 @@ import { h } from '../ui.js';
 import { s, svg } from './svg.js';
 import { H, W, crystal } from './art.js';
 
-const DEPTH = { far: 0.55, back: 1, mid: 1.12, front: 1.32 };
-const M = 700; // 층마다 양옆으로 더 그려 둔 폭 (깊이 차이로 밀려도 빈 곳이 안 보이게)
+const DEPTH = { far: 0.55, back: 1, mid: 1.12, front: 1.24 };
+// 층마다 양옆으로 더 그려 둔 폭: 깊이 차이로 가장 많이 밀리는 앞층도 약 170 정도라 이만큼이면 빈 곳이 안 보인다.
+// (너무 넓으면 휴대폰이 그려 둘 그림 크기만 커진다)
+const M = 260;
 const reduceMotion = () => Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches);
 
 /**
@@ -33,6 +35,7 @@ export function createScene({ onHot, onCrystal }) {
   let pan = 0;
   let maxPan = 0;
   let cx = 0;
+  let ty = 0; // 가로 화면: 폭에 맞춰 키우고 위아래를 똑같이 잘라 낸다
   let tilt = 0;
   let anim = 0;
   let drag = null;
@@ -43,7 +46,7 @@ export function createScene({ onHot, onCrystal }) {
     for (const [name, el] of Object.entries(layers)) {
       const f = DEPTH[name];
       const tx = (-M - (pan * f - (f - 1) * cx) + (f - 1) * tilt) * scale;
-      el.style.transform = `translate3d(${tx.toFixed(1)}px,0,0)`;
+      el.style.transform = `translate3d(${tx.toFixed(1)}px,${ty.toFixed(1)}px,0)`;
     }
     edgeL.hidden = pan <= 4;
     edgeR.hidden = pan >= maxPan - 4;
@@ -52,13 +55,15 @@ export function createScene({ onHot, onCrystal }) {
   function layout() {
     const r = root.getBoundingClientRect?.() ?? { width: 0, height: 0 };
     if (!r.width || !r.height) return;
-    scale = r.height / H;
+    // 보통(세로 휴대폰)은 높이에 맞추고 옆으로 둘러본다. 화면이 방보다 넓으면(가로 화면) 폭에 맞춰 빈 곳이 없게 한다
+    scale = Math.max(r.height / H, r.width / W);
     vw = r.width / scale;
+    ty = (r.height - H * scale) / 2;
     maxPan = Math.max(0, W - vw);
     cx = maxPan / 2;
     for (const el of Object.values(layers)) {
       el.style.width = `${((W + 2 * M) * scale).toFixed(1)}px`;
-      el.style.height = `${r.height}px`;
+      el.style.height = `${(H * scale).toFixed(1)}px`;
     }
     setPan(vw >= W ? (W - vw) / 2 : pan);
     paintLight();
@@ -248,8 +253,8 @@ export function createScene({ onHot, onCrystal }) {
       if (m.kind === 'mine' && m.glow)
         gEl.append(s('rect', { class: 'gm-mark mine', x: hs.x - 6, y: hs.y - 6, width: hs.w + 12, height: hs.h + 12, rx: 22, fill: 'none' }));
       if (m.badge || m.kind === 'done') {
-        const bx = hs.x + hs.w - 8;
-        const by = hs.y + 8;
+        const bx = Math.min(hs.x + hs.w - 8, W - 34); // 방 끝에 붙은 물체도 배지가 잘리지 않게
+        const by = Math.max(hs.y + 8, 34);
         gEl.append(
           s(
             'g',
@@ -280,7 +285,7 @@ export function createScene({ onHot, onCrystal }) {
     if (hs && r.width) {
       const f = DEPTH[hs.layer];
       const sx = (hs.x + hs.w / 2 - (pan * f - (f - 1) * cx)) * scale;
-      const sy = (hs.y + hs.h / 2) * scale;
+      const sy = (hs.y + hs.h / 2) * scale + ty;
       root.style.transformOrigin = `${sx.toFixed(0)}px ${sy.toFixed(0)}px`;
     }
     root.classList.remove('gm-entering');
