@@ -37,6 +37,9 @@ const KEYS = {
   translateHistory: 'eh.translateHistory.v1',
   levelTests: 'eh.levelTests.v1',
   azureUsage: 'eh.azureUsage.v1',
+  game: 'eh.game.v1', // 영어 게임 진행 (이 폰)
+  gamePrefs: 'eh.gamePrefs.v1',
+  gameLog: 'eh.gameLog.v1', // 끝낸 미션 기록
 };
 
 function readJson(key, fallback) {
@@ -225,6 +228,47 @@ export function saveLevelTest(result) {
   list.unshift(result);
   list.sort((a, b) => b.at - a.at);
   writeJson(KEYS.levelTests, list.slice(0, 20));
+}
+
+/* ---------- 영어 게임 (진행·설정·끝낸 기록, 이 기기에만) ---------- */
+
+export function getGameSave() {
+  const save = readJson(KEYS.game, null);
+  return save && save.v === 1 && typeof save.code === 'string' ? save : null;
+}
+
+export function setGameSave(save) {
+  if (save) writeJson(KEYS.game, save);
+  else {
+    try {
+      localStorage.removeItem(KEYS.game);
+    } catch {
+      /* 무시 */
+    }
+  }
+}
+
+const GAME_PREFS = { sound: true, glow: true, autoRead: true, timer: true, team: [] };
+
+export function getGamePrefs() {
+  return { ...GAME_PREFS, ...readJson(KEYS.gamePrefs, {}) };
+}
+
+export function updateGamePrefs(patch) {
+  const p = { ...getGamePrefs(), ...patch };
+  writeJson(KEYS.gamePrefs, p);
+  return p;
+}
+
+export function getGameLog() {
+  const list = readJson(KEYS.gameLog, []);
+  return Array.isArray(list) ? list : [];
+}
+
+export function addGameLog(entry) {
+  const list = getGameLog().filter((x) => x.at !== entry.at);
+  list.unshift(entry);
+  writeJson(KEYS.gameLog, list.slice(0, 20));
 }
 
 export function clearAllData() {

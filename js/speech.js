@@ -74,9 +74,9 @@ export function primeSpeech() {
 /**
  * 텍스트 읽기. 끝나면 resolve.
  * @param {string} text
- * @param {{lang?: string, rate?: number}} [opts] lang 기본 'en-US'
+ * @param {{lang?: string, rate?: number, pitch?: number}} [opts] lang 기본 'en-US', pitch: 목소리 높낮이 (게임 인물마다 다르게)
  */
-export function speak(text, { lang = 'en-US', rate } = {}) {
+export function speak(text, { lang = 'en-US', rate, pitch } = {}) {
   if (!synth) {
     toast('이 기기는 음성 읽기를 지원하지 않습니다.');
     return Promise.resolve();
@@ -87,6 +87,7 @@ export function speak(text, { lang = 'en-US', rate } = {}) {
   const u = new SpeechSynthesisUtterance(s);
   u.lang = lang;
   u.rate = rate ?? (lang.startsWith('en') ? getSettings().ttsRate : 1);
+  if (pitch) u.pitch = pitch;
   const v = pickVoice(lang);
   if (v) u.voice = v;
   return new Promise((resolve) => {

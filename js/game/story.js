@@ -621,3 +621,52 @@ export const FINAL_LINES = [
     '폭풍이 커다란 무지개처럼 우리 위를 지나가. 해냈어, 우주 사관생도들. 너희가 노바 정거장을 구했어!'
   ),
 ];
+
+/** 코어 룸에서 핍에게 묻는 질문 카드 */
+export const FINALE_PIP = [
+  {
+    q: T('Who are they?', '저 사람들은 누구야?'),
+    qh: T('Who was on the station last night?', '어젯밤 정거장에 누가 있었어?'),
+    a: T('Bolt, Zeek, Dr. Mira and Momo.', '볼트, 지크, 미라 박사, 모모야.'),
+    ah: T(
+      'Bolt the repair robot, Zeek the delivery drone, Dr. Mira the scientist and Momo the space hamster.',
+      '수리 로봇 볼트, 배달 드론 지크, 과학자 미라 박사, 우주 햄스터 모모야.'
+    ),
+  },
+  {
+    q: T('What are the clues?', '단서가 뭐야?'),
+    qh: T('Which clues did we find?', '우리가 어떤 단서를 찾았어?'),
+    a: T('Look at the evidence board!', '증거 판을 봐!'),
+    ah: T(
+      'We found a shadow, a smudge on a leaf, something on the floor and the door log. Check the evidence board!',
+      '그림자, 잎에 묻은 자국, 바닥에 떨어진 것, 출입 기록을 찾았어. 증거 판을 확인해 봐!'
+    ),
+  },
+  {
+    q: T('How do we find the culprit?', '범인은 어떻게 찾아?'),
+    qh: T('How can we find out who did it?', '누가 그랬는지 어떻게 알아내?'),
+    a: T('Ask questions. Then choose!', '질문하고, 골라!'),
+    ah: T(
+      "Ask everyone where they were and compare the answers with the evidence. When you're sure, press 'Accuse'!",
+      "모두에게 어디 있었는지 묻고 증거와 비교해 봐. 확실하면 '범인 지목'을 눌러!"
+    ),
+  },
+];
+
+/** 퍼즐이 아닌 물체를 누르면 핍이 하는 말 */
+export const FLAVOR = {
+  shuttle: L(
+    'pip',
+    'That is your shuttle!',
+    '너희 셔틀이야!',
+    "That's your shuttle, CADET-1. It brought you here safely!",
+    '너희 셔틀 CADET-1이야. 여기까지 안전하게 데려다줬지!'
+  ),
+  momobed: L(
+    'pip',
+    "This is Momo's bed. Momo is not here!",
+    '모모의 침대야. 모모가 없어!',
+    "This is Momo's flowerpot bed. Where is Momo? The blanket is cold.",
+    '모모의 화분 침대야. 모모는 어디 갔지? 이불이 차가워.'
+  ),
+};
