@@ -1160,7 +1160,13 @@ export function openGame(host, save, { onExit, onNewMission }) {
             ? h('div', { class: 'gm-evcard' }, evidenceIcon(r), bilingual(ev.card, devLv(), { big: true }))
             : chipView(r),
           mine && game.n > 1
-            ? h('p', { class: 'gm-lead' }, '이 칩은 이 폰에만 보여요. 다른 사람이 물어보면 영어로 알려 주세요!')
+            ? h(
+                'p',
+                { class: 'gm-lead' },
+                local().length > 1
+                  ? `${avatarOf(P(holder).avatar).emoji} ${avatarOf(P(holder).avatar).name}의 칩이에요. 잘 기억했다가 마지막 방에서 영어로 말해 주세요!`
+                  : '이 칩은 이 폰에만 보여요. 다른 사람이 물어보면 영어로 알려 주세요!'
+              )
             : null,
           r === 3 && mine ? doorLogView() : null,
           h(
