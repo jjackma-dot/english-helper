@@ -74,8 +74,18 @@ test('한 글자라도 틀린 코드는 받지 않는다', () => {
 });
 
 test('같은 얼굴을 두 번 고르거나 5명이면 코드를 만들지 않는다', () => {
-  assert.throws(() => encodeTeam({ seed: 1, players: [{ avatar: 'boar', level: 'basic' }, { avatar: 'boar', level: 'im1' }] }));
-  assert.throws(() => encodeTeam({ seed: 1, players: AVATARS.slice(0, 5).map((a) => ({ avatar: a.id, level: 'im1' })) }));
+  assert.throws(() =>
+    encodeTeam({
+      seed: 1,
+      players: [
+        { avatar: 'boar', level: 'basic' },
+        { avatar: 'boar', level: 'im1' },
+      ],
+    })
+  );
+  assert.throws(() =>
+    encodeTeam({ seed: 1, players: AVATARS.slice(0, 5).map((a) => ({ avatar: a.id, level: 'im1' })) })
+  );
   assert.throws(() => encodeTeam({ seed: 1, players: [] }));
 });
 
@@ -145,7 +155,10 @@ test('음성 인식 결과를 너그럽게 맞춘다 (숫자·줄임말·띄어 
   assert.ok(hasKeywords('could you please open your leaves rainbow', ['rainbow', ['please', 'could']]));
   assert.ok(!hasKeywords('open your leaves', ['rainbow']));
   assert.ok(hasKeywords('charge up pit', [['charge', 'charged'], 'pip']) === false, '세 글자 낱말은 정확해야 한다');
-  assert.ok(hasKeywords('charge up pipp', [['charge', 'charged'], 'pip']), '네 글자로 길게 인식돼도 한 글자 차이는 봐준다');
+  assert.ok(
+    hasKeywords('charge up pipp', [['charge', 'charged'], 'pip']),
+    '네 글자로 길게 인식돼도 한 글자 차이는 봐준다'
+  );
   assert.ok(hasKeywords('charge up pip', [['charge', 'charged'], 'pip']));
   assert.ok(voicePass('this is station nova the password is rocket over', { keywords: ['rocket'], minWords: 5 }));
   assert.ok(!voicePass('rocket', { keywords: ['rocket'], minWords: 5 }));
@@ -169,15 +182,24 @@ function checkWidget(lock, where) {
   switch (lock.widget) {
     case 'colors':
       assert.equal(e.length, lock.len, where);
-      assert.ok(e.every((x) => lock.palette.includes(x)), where);
+      assert.ok(
+        e.every((x) => lock.palette.includes(x)),
+        where
+      );
       break;
     case 'melody':
       assert.equal(e.length, lock.len, where);
-      assert.ok(e.every((x) => FLOWERS.includes(x)), where);
+      assert.ok(
+        e.every((x) => FLOWERS.includes(x)),
+        where
+      );
       break;
     case 'arrows':
       assert.equal(e.length, lock.len, where);
-      assert.ok(e.every((x) => DIRS[x]), where);
+      assert.ok(
+        e.every((x) => DIRS[x]),
+        where
+      );
       break;
     case 'keypad':
       assert.match(e, new RegExp(`^\\d{${lock.len}}$`), where);
@@ -187,11 +209,17 @@ function checkWidget(lock, where) {
       break;
     case 'sliders':
       assert.equal(e.length, lock.n, where);
-      assert.ok(e.every((v) => v >= lock.min && v <= lock.max), `${where}: ${e}`);
+      assert.ok(
+        e.every((v) => v >= lock.min && v <= lock.max),
+        `${where}: ${e}`
+      );
       break;
     case 'switches':
       assert.equal(e.length, lock.n, where);
-      assert.ok(e.every((v) => v === 'up' || v === 'down'), where);
+      assert.ok(
+        e.every((v) => v === 'up' || v === 'down'),
+        where
+      );
       break;
     case 'shape':
     case 'choice':
@@ -199,12 +227,22 @@ function checkWidget(lock, where) {
       break;
     case 'multi':
       assert.equal(e.length, lock.pick, where);
-      assert.ok(e.every((x) => lock.options.includes(x)), where);
+      assert.ok(
+        e.every((x) => lock.options.includes(x)),
+        where
+      );
       break;
     case 'word': {
       const alts = Array.isArray(e) ? e : [e];
-      assert.ok(alts.every((w) => /^[a-z]+$/i.test(w)), where);
-      if (lock.tiles) assert.ok([...alts[0].toUpperCase()].every((ch) => lock.tiles.includes(ch)), `${where}: 타일에 글자가 없음`);
+      assert.ok(
+        alts.every((w) => /^[a-z]+$/i.test(w)),
+        where
+      );
+      if (lock.tiles)
+        assert.ok(
+          [...alts[0].toUpperCase()].every((ch) => lock.tiles.includes(ch)),
+          `${where}: 타일에 글자가 없음`
+        );
       break;
     }
     case 'clock':
@@ -212,11 +250,17 @@ function checkWidget(lock, where) {
       assert.ok(lock.h24 ? e.h >= 0 && e.h <= 23 : e.h >= 1 && e.h <= 12, `${where}: ${e.h}`);
       break;
     case 'wires':
-      assert.ok(Object.values(e).every((v) => lock.right.some((x) => x.value === v)), where);
+      assert.ok(
+        Object.values(e).every((v) => lock.right.some((x) => x.value === v)),
+        where
+      );
       assert.equal(new Set(Object.values(e)).size, 3, where);
       break;
     case 'voice':
-      assert.ok(lock.voice.keywords.some((k) => (Array.isArray(k) ? k : [k]).includes(e)), `${where}: 말할 단어`);
+      assert.ok(
+        lock.voice.keywords.some((k) => (Array.isArray(k) ? k : [k]).includes(e)),
+        `${where}: 말할 단어`
+      );
       break;
     default:
       assert.fail(`${where}: 알 수 없는 잠금 ${lock.widget}`);
@@ -247,7 +291,10 @@ test('1~4명, 모든 수준 조합, 여러 시드에서 단서·잠금·힌트·
             checkWidget(x.lock, where);
             if (x.lock.widget !== 'voice') {
               const e = x.lock.expected;
-              assert.ok(sameAnswer(x.lock.widget, Array.isArray(e) && x.lock.widget === 'word' ? e[0] : e, e), `${where}: 정답이 통과하지 않음`);
+              assert.ok(
+                sameAnswer(x.lock.widget, Array.isArray(e) && x.lock.widget === 'word' ? e[0] : e, e),
+                `${where}: 정답이 통과하지 않음`
+              );
             }
             if (x.lock.voice?.say) assert.doesNotMatch(x.lock.voice.say, BAD_TEXT);
             assert.equal(x.letter, room.word[x.p]);
@@ -263,7 +310,8 @@ test('같은 팀 코드면 어느 폰에서나 같은 판이 나온다', () => {
   const t = team(['basic', 'im2', 'im3'], 1234);
   const a = buildGame(decodeTeam(encodeTeam(t)));
   const b = buildGame(t);
-  const strip = (g) => JSON.stringify(g.rooms.map((r) => [r.word, r.pairs.map((x) => [x.token, x.lock.expected, x.clue.text])]));
+  const strip = (g) =>
+    JSON.stringify(g.rooms.map((r) => [r.word, r.pairs.map((x) => [x.token, x.lock.expected, x.clue.text])]));
   assert.equal(strip(a), strip(b));
   assert.equal(a.culprit, b.culprit);
   assert.notEqual(strip(buildGame(team(['basic', 'im2', 'im3'], 1235))), strip(a), '시드가 다르면 문제가 달라진다');
@@ -401,8 +449,12 @@ test('증거·출입 기록·대답·고백·반박이 모든 범인에 대해 �
     }
     const log = doorLog(s.id);
     const opened = log.filter((r) => r.time === '9:05' || r.time === '9:20');
-    assert.ok(opened.every((r) => r.door.en === s.place.en), '범인 방 문만 9:05·9:20에 열렸다');
-    for (const q of QUESTIONS) for (const hard of [false, true]) checkText(answerOf(s.id, q.id, hard), `${s.id}/${q.id}`, true);
+    assert.ok(
+      opened.every((r) => r.door.en === s.place.en),
+      '범인 방 문만 9:05·9:20에 열렸다'
+    );
+    for (const q of QUESTIONS)
+      for (const hard of [false, true]) checkText(answerOf(s.id, q.id, hard), `${s.id}/${q.id}`, true);
     assert.equal(CONFESSION[s.id].length, 2);
     checkText(RESOLUTION[s.id], 'resolution', true);
     for (const other of SUSPECTS) if (other.id !== s.id) checkText(denial(other.id, s.id), `반박 ${other.id}`, true);

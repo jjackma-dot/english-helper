@@ -7,6 +7,16 @@ export function setSound(on) {
   enabled = Boolean(on);
 }
 
+/** 짧은 진동 (맞힘·틀림·별 조각). 소리를 끄면 진동도 쉰다 */
+function buzz(pattern) {
+  if (!enabled) return;
+  try {
+    navigator.vibrate?.(pattern);
+  } catch {
+    /* 무시 */
+  }
+}
+
 function audio() {
   if (!enabled) return null;
   try {
@@ -48,19 +58,29 @@ export const FLOWER_FREQ = { pink: 523.25, orange: 587.33, yellow: 659.25, blue:
 export const sfx = {
   tap: () => tone(660, 0.06, { type: 'triangle', vol: 0.08 }),
   key: () => tone(880, 0.05, { type: 'square', vol: 0.05 }),
-  ok: () => [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.16, { type: 'triangle', at: i * 0.08 })),
+  ok: () => {
+    buzz([25, 40, 25]);
+    [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.16, { type: 'triangle', at: i * 0.08 }));
+  },
   bad: () => {
+    buzz(90);
     tone(220, 0.18, { type: 'sawtooth', vol: 0.08 });
     tone(180, 0.22, { type: 'sawtooth', vol: 0.08, at: 0.12 });
   },
-  collect: () => [1175, 1568, 2093].forEach((f, i) => tone(f, 0.12, { type: 'sine', vol: 0.12, at: i * 0.06 })),
+  collect: () => {
+    buzz(20);
+    [1175, 1568, 2093].forEach((f, i) => tone(f, 0.12, { type: 'sine', vol: 0.12, at: i * 0.06 }));
+  },
   door: () => {
     tone(160, 0.6, { type: 'sawtooth', vol: 0.06, slide: 220 });
     tone(320, 0.5, { type: 'sine', vol: 0.08, at: 0.1, slide: 400 });
   },
   note: (color) => tone(FLOWER_FREQ[color] || 600, 0.4, { type: 'sine', vol: 0.2 }),
   alarm: () => [0, 0.32].forEach((at) => tone(740, 0.22, { type: 'square', vol: 0.05, at, slide: -200 })),
-  win: () => [523, 659, 784, 1047, 784, 1047, 1319].forEach((f, i) => tone(f, 0.22, { type: 'triangle', vol: 0.14, at: i * 0.12 })),
+  win: () =>
+    [523, 659, 784, 1047, 784, 1047, 1319].forEach((f, i) =>
+      tone(f, 0.22, { type: 'triangle', vol: 0.14, at: i * 0.12 })
+    ),
   beep: () => tone(1320, 0.08, { type: 'sine', vol: 0.08 }),
 };
 

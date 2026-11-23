@@ -285,7 +285,14 @@ export function normalizeSpeech(s) {
     .toLowerCase()
     .replace(/[’`]/g, "'");
   for (const [re, rep] of CONTRACTIONS) t = t.replace(re, rep);
-  t = t.replace(/\d+/g, (d) => (Number(d) <= 20 ? ` ${NUM_WORDS[Number(d)]} ` : ` ${d.split('').map((x) => NUM_WORDS[x]).join(' ')} `));
+  t = t.replace(/\d+/g, (d) =>
+    Number(d) <= 20
+      ? ` ${NUM_WORDS[Number(d)]} `
+      : ` ${d
+          .split('')
+          .map((x) => NUM_WORDS[x])
+          .join(' ')} `
+  );
   return t
     .replace(/[^a-z\s]/g, ' ')
     .replace(/\s+/g, ' ')

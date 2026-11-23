@@ -2131,6 +2131,7 @@ ul.photo-tips {
 
 body.gm-lock {
   overflow: hidden;
+  overscroll-behavior: none; /* 게임 중 아래로 당겨 새로고침되지 않게 */
 }
 .gm-root {
   position: fixed;

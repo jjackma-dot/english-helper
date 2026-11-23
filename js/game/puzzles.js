@@ -128,7 +128,10 @@ const fuse = {
         palette,
         len: 3,
         expected: colors,
-        text: T('Put in the fuses. Tap the colors your friend says.', '퓨즈를 넣어요. 친구가 말하는 색을 차례대로 누르세요.'),
+        text: T(
+          'Put in the fuses. Tap the colors your friend says.',
+          '퓨즈를 넣어요. 친구가 말하는 색을 차례대로 누르세요.'
+        ),
       };
     if (lv === 'im1')
       return {
@@ -180,15 +183,25 @@ const fuse = {
       clueLv === 'im2'
         ? T('Listen to the end. The captain fixes a mistake.', '끝까지 들어요. 선장이 실수를 고쳐 말해요.')
         : clueLv === 'im3'
-          ? T('Read the message slowly. Which fuse goes before all the others?', '천천히 읽어요. 어떤 퓨즈가 가장 먼저일까요?')
+          ? T(
+              'Read the message slowly. Which fuse goes before all the others?',
+              '천천히 읽어요. 어떤 퓨즈가 가장 먼저일까요?'
+            )
           : T('Listen to the radio next to the shuttle.', '셔틀 옆 무전기를 들어 봐요.');
     const h2 =
       lockLv === 'im2'
         ? T('The box is upside down. Start with the last color.', '상자가 거꾸로예요. 마지막 색부터 눌러요.')
         : lockLv === 'im3'
-          ? T(`Use ${c(spare)} instead of ${c(colors[melted])}.`, `${ck(colors[melted])} 대신 ${josa(ck(spare), '을', '를')} 써요.`)
+          ? T(
+              `Use ${c(spare)} instead of ${c(colors[melted])}.`,
+              `${ck(colors[melted])} 대신 ${josa(ck(spare), '을', '를')} 써요.`
+            )
           : T('Tap the colors in the same order.', '같은 순서로 색을 눌러요.');
-    return [h1, h2, T(`The first fuse is ${c(expected[0])}.`, `첫 번째 퓨즈는 ${josa(ck(expected[0]), '이에요', '예요')}.`)];
+    return [
+      h1,
+      h2,
+      T(`The first fuse is ${c(expected[0])}.`, `첫 번째 퓨즈는 ${josa(ck(expected[0]), '이에요', '예요')}.`),
+    ];
   },
   done: T('The emergency power is on!', '비상 전원이 켜졌어요!'),
 };
@@ -238,7 +251,10 @@ const crates = {
         widget: 'keypad',
         len: 3,
         expected: code,
-        text: T('Open the locker! Type the numbers your friend says.', '사물함을 열어요! 친구가 말하는 숫자를 누르세요.'),
+        text: T(
+          'Open the locker! Type the numbers your friend says.',
+          '사물함을 열어요! 친구가 말하는 숫자를 누르세요.'
+        ),
       };
     if (lv === 'im1')
       return {
@@ -274,7 +290,8 @@ const crates = {
   },
   tell({ digits: [a, b, d] }, lv) {
     if (lv === 'basic') return T(`${cap(numWord(a))}, ${numWord(b)}, ${numWord(d)}!`, `${a}, ${b}, ${d}!`);
-    if (lv === 'im1') return T(`The code is ${numWord(a)}, ${numWord(b)}, ${numWord(d)}.`, `비밀번호는 ${a}, ${b}, ${d}야.`);
+    if (lv === 'im1')
+      return T(`The code is ${numWord(a)}, ${numWord(b)}, ${numWord(d)}.`, `비밀번호는 ${a}, ${b}, ${d}야.`);
     if (lv === 'im2') return frame('The numbers are ___, ___ and ___.', '숫자는 ___, ___, ___야.');
     return goal('Tell your teammate the three numbers.');
   },
@@ -298,7 +315,10 @@ const crates = {
 
 const SIGN_SHAPES = ['circle', 'triangle', 'square', 'heart'];
 const SHAPE_RIDDLE = {
-  circle: T('The station sign has no corners. It is round, like a ball.', '정거장 표시는 모서리가 없어요. 공처럼 둥글어요.'),
+  circle: T(
+    'The station sign has no corners. It is round, like a ball.',
+    '정거장 표시는 모서리가 없어요. 공처럼 둥글어요.'
+  ),
   triangle: T('The station sign has three sides and three corners.', '정거장 표시는 변이 세 개, 모서리가 세 개예요.'),
   square: T(
     'The station sign has four sides, and all of them are the same length.',
@@ -354,7 +374,10 @@ const charger = {
   lockView({ shape }, lv) {
     const base = { widget: 'shape', options: ['circle', 'triangle', 'square', 'heart', 'star'], expected: shape };
     if (lv === 'basic')
-      return { ...base, text: T('Charge Pip! Press the shape your friend says.', '핍을 충전해요! 친구가 말하는 모양을 누르세요.') };
+      return {
+        ...base,
+        text: T('Charge Pip! Press the shape your friend says.', '핍을 충전해요! 친구가 말하는 모양을 누르세요.'),
+      };
     if (lv === 'im1')
       return {
         ...base,
@@ -591,7 +614,13 @@ const fruit = {
   token: (r) => {
     const all = Object.keys(FRUITS);
     const f = pick(r, all);
-    return { fruit: f, tried: shuffle(r, all.filter((x) => x !== f)).slice(0, 3) };
+    return {
+      fruit: f,
+      tried: shuffle(
+        r,
+        all.filter((x) => x !== f)
+      ).slice(0, 3),
+    };
   },
   clueView({ fruit: f, tried: [x, y, z] }, lv) {
     const F = FRUITS[f];
@@ -619,7 +648,10 @@ const fruit = {
         pictures: true,
         words: true,
         expected: f,
-        text: T('Feed Big Bud! Pick the fruit your friend says.', '빅 버드에게 먹이를 줘요! 친구가 말하는 과일을 고르세요.'),
+        text: T(
+          'Feed Big Bud! Pick the fruit your friend says.',
+          '빅 버드에게 먹이를 줘요! 친구가 말하는 과일을 고르세요.'
+        ),
       };
     if (lv === 'im1')
       return {
@@ -676,7 +708,11 @@ const fruit = {
       im2: T('Read the names and find the same fruit.', '이름을 읽고 같은 과일을 찾아요.'),
       im3: T('Type the name of the fruit. Check the spelling.', '과일 이름을 써요. 철자를 확인해요.'),
     }[lockLv];
-    return [h1, h2, T(`It starts with "${FRUITS[f].en[0].toUpperCase()}".`, `"${FRUITS[f].en[0].toUpperCase()}"로 시작해요.`)];
+    return [
+      h1,
+      h2,
+      T(`It starts with "${FRUITS[f].en[0].toUpperCase()}".`, `"${FRUITS[f].en[0].toUpperCase()}"로 시작해요.`),
+    ];
   },
   done: T('Big Bud eats the fruit. "Mmm!" One leaf opens.', '빅 버드가 과일을 먹어요. "냠!" 잎 하나가 열렸어요.'),
 };
@@ -730,10 +766,17 @@ const fountain = {
       return {
         ...base,
         expected: n,
-        text: T('Water Big Bud! Set the number your friend says.', '빅 버드에게 물을 줘요! 친구가 말하는 숫자로 맞추세요.'),
+        text: T(
+          'Water Big Bud! Set the number your friend says.',
+          '빅 버드에게 물을 줘요! 친구가 말하는 숫자로 맞추세요.'
+        ),
       };
     if (lv === 'im1')
-      return { ...base, expected: n, text: T('Set the water pump to the number of fish.', '물 펌프를 물고기 수에 맞추세요.') };
+      return {
+        ...base,
+        expected: n,
+        text: T('Set the water pump to the number of fish.', '물 펌프를 물고기 수에 맞추세요.'),
+      };
     if (lv === 'im2')
       return {
         ...base,
@@ -766,7 +809,10 @@ const fountain = {
       basic: T('Count the fish in the fountain.', '분수의 물고기를 세요.'),
       im1: T('Count only the blue fish.', '파란 물고기만 세요.'),
       im2: T('Not orange, and going left.', '주황이 아니고, 왼쪽으로 가는 물고기.'),
-      im3: T('All the fish minus the striped ones. The statue is not a fish.', '전체에서 줄무늬를 빼요. 돌 물고기는 세지 않아요.'),
+      im3: T(
+        'All the fish minus the striped ones. The statue is not a fish.',
+        '전체에서 줄무늬를 빼요. 돌 물고기는 세지 않아요.'
+      ),
     }[clueLv];
     const h2 = {
       basic: T('Use the same number.', '같은 숫자로 맞춰요.'),
@@ -831,7 +877,10 @@ const song = {
         ...base,
         len: 4,
         expected: m,
-        text: T('Sing to Big Bud! Tap the flowers your friend says.', '빅 버드에게 노래해요! 친구가 말하는 꽃을 차례로 누르세요.'),
+        text: T(
+          'Sing to Big Bud! Tap the flowers your friend says.',
+          '빅 버드에게 노래해요! 친구가 말하는 꽃을 차례로 누르세요.'
+        ),
       };
     if (lv === 'im1')
       return {
@@ -892,7 +941,10 @@ const MAGIC = {
   sunshine: { ko: '햇살', riddle: 'the star in our sky + what a polished shoe does' },
   rainbow: { ko: '무지개', riddle: 'the water that falls from clouds + the knot you tie your shoelaces into' },
   moonlight: { ko: '달빛', riddle: "Earth's only natural satellite + the opposite of dark" },
-  stardust: { ko: '별가루', riddle: 'a twinkling thing in the night sky + the tiny gray bits that collect on old shelves' },
+  stardust: {
+    ko: '별가루',
+    riddle: 'a twinkling thing in the night sky + the tiny gray bits that collect on old shelves',
+  },
   sunflower: { ko: '해바라기', riddle: 'the star in our sky + the colorful part of a plant' },
 };
 /** 글자 두 개를 비운 단어 (첫 글자는 남긴다) */
@@ -936,7 +988,10 @@ const bigbud = {
     if (lv === 'im2')
       return {
         art: { type: 'word', word: mixed.toUpperCase() },
-        text: T('The magic word got mixed up! Unscramble the letters.', '마법 단어의 글자가 섞였어요! 바르게 맞춰 보세요.'),
+        text: T(
+          'The magic word got mixed up! Unscramble the letters.',
+          '마법 단어의 글자가 섞였어요! 바르게 맞춰 보세요.'
+        ),
       };
     return { art: { type: 'paper' }, text: T(`The magic word is a compound word: ${MAGIC[word].riddle}.`) };
   },
@@ -952,7 +1007,10 @@ const bigbud = {
       return {
         ...base,
         voice: { keywords: [word], minWords: 3 },
-        text: T('Say: "Wake up, Big Bud! ___!" Use the magic word.', '"Wake up, Big Bud! ___!"라고 말해요. 빈칸에 마법 단어를 넣어요.'),
+        text: T(
+          'Say: "Wake up, Big Bud! ___!" Use the magic word.',
+          '"Wake up, Big Bud! ___!"라고 말해요. 빈칸에 마법 단어를 넣어요.'
+        ),
       };
     if (lv === 'im2')
       return {
@@ -966,7 +1024,9 @@ const bigbud = {
     return {
       ...base,
       voice: { keywords: [word, ['please', 'could', 'would', 'can']], minWords: 7 },
-      text: T('Big Bud only opens for a polite request. Ask Big Bud to open its leaves, and use the magic word in your sentence.'),
+      text: T(
+        'Big Bud only opens for a polite request. Ask Big Bud to open its leaves, and use the magic word in your sentence.'
+      ),
     };
   },
   ask: {
@@ -996,7 +1056,10 @@ const bigbud = {
     }[lockLv];
     return [h1, h2, T(`The word starts with "${word[0].toUpperCase()}".`, `"${word[0].toUpperCase()}"로 시작해요.`)];
   },
-  done: T('Big Bud yawns and opens all its leaves. "Thank you, friends!"', '빅 버드가 하품하며 잎을 활짝 열었어요. "고마워, 친구들!"'),
+  done: T(
+    'Big Bud yawns and opens all its leaves. "Thank you, friends!"',
+    '빅 버드가 하품하며 잎을 활짝 열었어요. "고마워, 친구들!"'
+  ),
 };
 
 /* ---------- 3. 로봇 작업실 ---------- */
@@ -1046,9 +1109,13 @@ const arm = {
   clueView({ moves }, lv) {
     const en = moves.map((d) => DIRS[d].en);
     const ko = moves.map((d) => DIRS[d].ko);
-    if (lv === 'basic') return { art: { type: 'arrows', moves }, text: T(`${cap(en.join(', '))}!`, `${ko.join(', ')}!`) };
+    if (lv === 'basic')
+      return { art: { type: 'arrows', moves }, text: T(`${cap(en.join(', '))}!`, `${ko.join(', ')}!`) };
     if (lv === 'im1')
-      return { art: { type: 'screen' }, text: T(`Move the arm: ${en.join(', ')}.`, `팔을 움직여요: ${ko.join(', ')}.`) };
+      return {
+        art: { type: 'screen' },
+        text: T(`Move the arm: ${en.join(', ')}.`, `팔을 움직여요: ${ko.join(', ')}.`),
+      };
     const g = groups(moves);
     if (lv === 'im2') {
       const starts = ['First', 'Then', 'Next', 'Finally'];
@@ -1063,7 +1130,9 @@ const arm = {
                 `${i === lastIdx && i > 0 ? 'Finally' : starts[i]}, move the arm ${d} ${numWord(n)} square${n > 1 ? 's' : ''}.`
             )
             .join(' '),
-          g.map(([d, n], i) => `${i === lastIdx && i > 0 ? '마지막으로' : startsKo[i]} ${ro(DIRS[d].ko)} ${n}칸.`).join(' ')
+          g
+            .map(([d, n], i) => `${i === lastIdx && i > 0 ? '마지막으로' : startsKo[i]} ${ro(DIRS[d].ko)} ${n}칸.`)
+            .join(' ')
         ),
       };
     }
@@ -1089,7 +1158,10 @@ const arm = {
         ...base,
         map: null,
         expected: moves,
-        text: T('Move the robot arm! Press the arrows your friend says.', '로봇 팔을 움직여요! 친구가 말하는 화살표를 누르세요.'),
+        text: T(
+          'Move the robot arm! Press the arrows your friend says.',
+          '로봇 팔을 움직여요! 친구가 말하는 화살표를 누르세요.'
+        ),
       };
     if (lv === 'im1')
       return {
@@ -1144,7 +1216,11 @@ const arm = {
       im2: T('Left and right are switched.', '왼쪽과 오른쪽을 바꿔 눌러요.'),
       im3: T('Press the opposite arrow every time.', '매번 반대 화살표를 눌러요.'),
     }[lockLv];
-    return [h1, h2, T(`The first press is ${expected[0]}.`, `첫 번째로 누를 것은 ${josa(DIRS[expected[0]].ko, '이에요', '예요')}.`)];
+    return [
+      h1,
+      h2,
+      T(`The first press is ${expected[0]}.`, `첫 번째로 누를 것은 ${josa(DIRS[expected[0]].ko, '이에요', '예요')}.`),
+    ];
   },
   done: T('The arm grabs a shiny gear!', '로봇 팔이 반짝이는 톱니바퀴를 집었어요!'),
 };
@@ -1172,9 +1248,13 @@ function wireFacts(map) {
     });
     for (const y of WIRE_COLORS) {
       if (x === y) continue;
-      if (map[x] > map[y]) facts.push({ en: `The ${x} wire goes to a bigger number than the ${y} wire.`, test: (m) => m[x] > m[y] });
+      if (map[x] > map[y])
+        facts.push({ en: `The ${x} wire goes to a bigger number than the ${y} wire.`, test: (m) => m[x] > m[y] });
       if (map[x] === map[y] + 1)
-        facts.push({ en: `The ${x} wire's number is exactly one more than the ${y} wire's.`, test: (m) => m[x] === m[y] + 1 });
+        facts.push({
+          en: `The ${x} wire's number is exactly one more than the ${y} wire's.`,
+          test: (m) => m[x] === m[y] + 1,
+        });
     }
   }
   return { facts, nums };
@@ -1239,7 +1319,10 @@ const wires = {
       return {
         ...base,
         right: [1, 2, 3].map((v) => ({ value: v, label: String(v) })),
-        text: T('Connect each wire to the right number. Ask your teammate.', '전선을 알맞은 번호에 이어요. 팀원에게 물어보세요.'),
+        text: T(
+          'Connect each wire to the right number. Ask your teammate.',
+          '전선을 알맞은 번호에 이어요. 팀원에게 물어보세요.'
+        ),
       };
     if (lv === 'im2')
       return {
@@ -1266,7 +1349,10 @@ const wires = {
   },
   tell({ map }, lv) {
     if (lv === 'basic')
-      return T(WIRE_COLORS.map((x) => `${cap(x)}, ${numWord(map[x])}!`).join(' '), WIRE_COLORS.map((x) => `${ck(x)} ${map[x]}!`).join(' '));
+      return T(
+        WIRE_COLORS.map((x) => `${cap(x)}, ${numWord(map[x])}!`).join(' '),
+        WIRE_COLORS.map((x) => `${ck(x)} ${map[x]}!`).join(' ')
+      );
     if (lv === 'im1')
       return T(
         `Red goes to ${numWord(map.red)}, blue goes to ${numWord(map.blue)}, and yellow goes to ${numWord(map.yellow)}.`,
@@ -1303,7 +1389,14 @@ const gears = {
   token: (r) => {
     const size = pick(r, ['big', 'small']);
     const color = pick(r, GEAR_COLORS);
-    return { size, color, others: shuffle(r, GEAR_COLORS.filter((x) => x !== color)) };
+    return {
+      size,
+      color,
+      others: shuffle(
+        r,
+        GEAR_COLORS.filter((x) => x !== color)
+      ),
+    };
   },
   clueView({ size, color, others: [x, y] }, lv) {
     const other = size === 'big' ? 'small' : 'big';
@@ -1386,7 +1479,8 @@ const gears = {
   },
   tell({ size, color }, lv) {
     if (lv === 'basic') return T(`${cap(size)} and ${color}!`, `${SIZE[size].ko} ${adj(color)} 거!`);
-    if (lv === 'im1') return T(`We need the ${size} ${color} gear.`, `${SIZE[size].ko} ${adj(color)} 톱니바퀴가 필요해.`);
+    if (lv === 'im1')
+      return T(`We need the ${size} ${color} gear.`, `${SIZE[size].ko} ${adj(color)} 톱니바퀴가 필요해.`);
     if (lv === 'im2') return frame('We need the ___ ___ gear.', '___ ___ 톱니바퀴가 필요해.');
     return goal('Tell your teammate which gear the motor needs.');
   },
@@ -1448,7 +1542,11 @@ const sparky = {
     if (lv === 'basic')
       return { ...base, expected: n, text: T('Type the number your friend says.', '친구가 말하는 숫자로 맞추세요.') };
     if (lv === 'im1')
-      return { ...base, expected: n, text: T('Choose the floor number for the Control Room.', '관제실 층 번호를 고르세요.') };
+      return {
+        ...base,
+        expected: n,
+        text: T('Choose the floor number for the Control Room.', '관제실 층 번호를 고르세요.'),
+      };
     if (lv === 'im2')
       return {
         ...base,
@@ -1520,7 +1618,15 @@ const scanner = {
     const refs = [];
     for (let k = -3; k <= 3; k++) if (k && pos - k >= 1 && pos - k <= 8) refs.push(k);
     const k = pick(r, refs);
-    return { planet, k, ref: PLANET_ORDER[pos - k - 1], nots: shuffle(r, Object.keys(PLANETS).filter((p) => p !== planet)) };
+    return {
+      planet,
+      k,
+      ref: PLANET_ORDER[pos - k - 1],
+      nots: shuffle(
+        r,
+        Object.keys(PLANETS).filter((p) => p !== planet)
+      ),
+    };
   },
   clueView({ planet, k, ref, nots }, lv) {
     const P = PLANETS[planet];
@@ -1567,7 +1673,10 @@ const scanner = {
         ...base,
         pictures: false,
         words: true,
-        text: T('Choose the planet by its name to calibrate the scanner.', '이름을 보고 행성을 골라 스캐너를 맞추세요.'),
+        text: T(
+          'Choose the planet by its name to calibrate the scanner.',
+          '이름을 보고 행성을 골라 스캐너를 맞추세요.'
+        ),
       };
     return {
       widget: 'word',
@@ -1623,12 +1732,23 @@ const password = {
   lock: { obj: 'mic', en: 'Radio to Earth', ko: '지구 무전', icon: '🎙️' },
   token: (r) => {
     const word = pick(r, Object.keys(SPACE_WORDS));
-    return { word, blank: blanked(r, word), extra: shuffle(r, [...'ABDFHJLMNSUWXYZ'].filter((x) => !word.toUpperCase().includes(x))).slice(0, 2) };
+    return {
+      word,
+      blank: blanked(r, word),
+      extra: shuffle(
+        r,
+        [...'ABDFHJLMNSUWXYZ'].filter((x) => !word.toUpperCase().includes(x))
+      ).slice(0, 2),
+    };
   },
   clueView({ word, blank }, lv) {
     const W = word.toUpperCase();
     if (lv === 'basic')
-      return { art: { type: 'word', word: W, picture: word }, say: `${cap(word)}! ${spell(word)}.`, text: T(W, SPACE_WORDS[word]) };
+      return {
+        art: { type: 'word', word: W, picture: word },
+        say: `${cap(word)}! ${spell(word)}.`,
+        text: T(W, SPACE_WORDS[word]),
+      };
     if (lv === 'im1')
       return {
         art: { type: 'word', word: blank.toUpperCase(), picture: word },
@@ -1640,7 +1760,10 @@ const password = {
     if (lv === 'im2')
       return {
         art: { type: 'word', word: [...W].reverse().join('') },
-        text: T("Earth's message came in backwards! Read it from right to left.", '지구의 메시지가 거꾸로 왔어요! 오른쪽부터 읽어요.'),
+        text: T(
+          "Earth's message came in backwards! Read it from right to left.",
+          '지구의 메시지가 거꾸로 왔어요! 오른쪽부터 읽어요.'
+        ),
       };
     return {
       art: { type: 'word', word: caesar(word) },
@@ -1655,10 +1778,17 @@ const password = {
         widget: 'word',
         tiles: [...new Set([...word.toUpperCase(), ...extra])].sort(),
         expected: word,
-        text: T('Type the password. Your friend can spell it for you.', '암호를 입력해요. 친구가 철자를 불러 줄 거예요.'),
+        text: T(
+          'Type the password. Your friend can spell it for you.',
+          '암호를 입력해요. 친구가 철자를 불러 줄 거예요.'
+        ),
       };
     if (lv === 'im1')
-      return { widget: 'word', expected: word, text: T('Type the secret password from Earth.', '지구에서 온 비밀 암호를 입력하세요.') };
+      return {
+        widget: 'word',
+        expected: word,
+        text: T('Type the secret password from Earth.', '지구에서 온 비밀 암호를 입력하세요.'),
+      };
     if (lv === 'im2')
       return {
         widget: 'voice',
@@ -1684,7 +1814,8 @@ const password = {
   },
   tell({ word }, lv) {
     if (lv === 'basic') return T(`${cap(word)}! ${spell(word)}.`, `${SPACE_WORDS[word]}! ${spell(word)}.`);
-    if (lv === 'im1') return T(`The password is ${word}. ${spell(word)}.`, `암호는 ${word}(${SPACE_WORDS[word]})야. ${spell(word)}.`);
+    if (lv === 'im1')
+      return T(`The password is ${word}. ${spell(word)}.`, `암호는 ${word}(${SPACE_WORDS[word]})야. ${spell(word)}.`);
     if (lv === 'im2') return frame('The password is ___. It is spelled ___.', '암호는 ___야. 철자는 ___야.');
     return goal('Tell your teammate the password.');
   },
@@ -1699,11 +1830,21 @@ const password = {
       basic: T('Tap the letters one by one.', '글자를 하나씩 눌러요.'),
       im1: T('Type the letters one by one.', '글자를 하나씩 입력해요.'),
       im2: T('Say the password inside the sentence.', '문장 속에 암호를 넣어 말해요.'),
-      im3: T('Say three things: who you are, why you are calling, and the password.', '누구인지, 왜 연락하는지, 암호 세 가지를 말해요.'),
+      im3: T(
+        'Say three things: who you are, why you are calling, and the password.',
+        '누구인지, 왜 연락하는지, 암호 세 가지를 말해요.'
+      ),
     }[lockLv];
-    return [h1, h2, T(`The password starts with "${word[0].toUpperCase()}".`, `암호는 "${word[0].toUpperCase()}"로 시작해요.`)];
+    return [
+      h1,
+      h2,
+      T(`The password starts with "${word[0].toUpperCase()}".`, `암호는 "${word[0].toUpperCase()}"로 시작해요.`),
+    ];
   },
-  done: T('Earth Control: "Password correct. Good luck, Station Nova!"', '지구 관제소: "암호 확인. 행운을 빈다, 노바 정거장!"'),
+  done: T(
+    'Earth Control: "Password correct. Good luck, Station Nova!"',
+    '지구 관제소: "암호 확인. 행운을 빈다, 노바 정거장!"'
+  ),
 };
 
 const POWER_PHRASE = {
@@ -1760,7 +1901,11 @@ const power = {
         ),
       };
     if (lv === 'im1')
-      return { ...base, expected: levels, text: T('Set the power for the three cameras.', '카메라 세 대의 전력을 맞추세요.') };
+      return {
+        ...base,
+        expected: levels,
+        text: T('Set the power for the three cameras.', '카메라 세 대의 전력을 맞추세요.'),
+      };
     if (lv === 'im2')
       return {
         ...base,
@@ -1825,7 +1970,12 @@ function quarterWords(h, m) {
   if (m === 30) return `half past ${hourWord(h)}`;
   return `a quarter to ${hourWord(h + 1)}`;
 }
-const DURATION = { 15: 'a quarter of an hour', 30: 'half an hour', 45: 'three quarters of an hour', 90: 'an hour and a half' };
+const DURATION = {
+  15: 'a quarter of an hour',
+  30: 'half an hour',
+  45: 'three quarters of an hour',
+  90: 'an hour and a half',
+};
 const addMin = ({ h, m }, d) => {
   const t = h * 60 + m + d;
   return { h: Math.floor(t / 60), m: t % 60 };
@@ -1835,7 +1985,12 @@ const doorclock = {
   id: 'doorclock',
   clue: { obj: 'captainlog', en: "Captain's video log", ko: '선장의 영상 기록', icon: '📹' },
   lock: { obj: 'doorclock', en: 'Door clock', ko: '문 시계', icon: '🕘' },
-  token: (r) => ({ h: randInt(r, 8, 10), m: pick(r, [0, 15, 30, 45]), d2: pick(r, [15, 30, 45]), d3: pick(r, [30, 45, 90]) }),
+  token: (r) => ({
+    h: randInt(r, 8, 10),
+    m: pick(r, [0, 15, 30, 45]),
+    d2: pick(r, [15, 30, 45]),
+    d3: pick(r, [30, 45, 90]),
+  }),
   clueView({ h, m, d2, d3 }, lv) {
     const t = { h, m };
     if (lv === 'basic')
@@ -1918,7 +2073,10 @@ const doorclock = {
       basic: T("Watch the captain's video on the chair.", '의자 위 선장의 영상을 보세요.'),
       im1: T("Watch the captain's video on the chair.", '의자 위 선장의 영상을 보세요.'),
       im2: T('Add the minutes to the time.', '시각에 분을 더해요.'),
-      im3: T('Half past nine is 9:30. A quarter to ten is 9:45.', 'half past nine은 9:30, a quarter to ten은 9:45예요.'),
+      im3: T(
+        'Half past nine is 9:30. A quarter to ten is 9:45.',
+        'half past nine은 9:30, a quarter to ten은 9:45예요.'
+      ),
     }[clueLv];
     const h2 = {
       basic: T('Set the same time.', '같은 시각으로 맞춰요.'),

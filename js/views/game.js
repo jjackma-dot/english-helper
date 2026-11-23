@@ -6,7 +6,21 @@ import { h, btn, clear, toast, segmented, shareText, copyText } from '../ui.js';
 import { icon } from '../icons.js';
 import { geminiEnabled, getGameLog, getGamePrefs, getGameSave, setGameSave, updateGamePrefs } from '../store.js';
 import { primeSpeech } from '../speech.js';
-import { AVATARS, LEVELS, LEVEL_INFO, MAX_PLAYERS, ROLES, assignRoles, avatarOf, clockText, decodeTeam, encodeTeam, formatCode, newSeed, normalizeCode } from '../game/logic.js';
+import {
+  AVATARS,
+  LEVELS,
+  LEVEL_INFO,
+  MAX_PLAYERS,
+  ROLES,
+  assignRoles,
+  avatarOf,
+  clockText,
+  decodeTeam,
+  encodeTeam,
+  formatCode,
+  newSeed,
+  normalizeCode,
+} from '../game/logic.js';
 import { suspectOf, TITLE } from '../game/story.js';
 import { defs, heroArt } from '../game/art.js';
 import { newSave, openGame } from '../game/play.js';
@@ -20,7 +34,14 @@ const show_ = (...nodes) => {
   window.scrollTo?.({ top: 0 });
 };
 
-const face = (p) => h('span', { class: 'gm-face-chip' }, h('span', { class: 'gm-emoji' }, avatarOf(p.avatar).emoji), avatarOf(p.avatar).name, h('small', null, LEVEL_INFO[p.level].label));
+const face = (p) =>
+  h(
+    'span',
+    { class: 'gm-face-chip' },
+    h('span', { class: 'gm-emoji' }, avatarOf(p.avatar).emoji),
+    avatarOf(p.avatar).name,
+    h('small', null, LEVEL_INFO[p.level].label)
+  );
 
 /* ---------- 처음 화면 ---------- */
 
@@ -45,16 +66,36 @@ function renderHome() {
       { class: 'card gm-hero' },
       heroArt(),
       h('h2', { class: 'gm-hero-title' }, TITLE.ko, h('small', { lang: 'en' }, TITLE.en)),
-      h('p', null, '불이 꺼진 우주정거장에서 사라진 ', h('b', null, '"별의 심장"'), '을 찾아요. 방 4개의 수수께끼를 영어로 힘을 합쳐 풀고, 마지막에는 용의자 4명 중 거짓말을 하는 한 명을 찾아내요.'),
-      h('p', { class: 'hint' }, '1~4명 · 휴대폰 1~4대 · Basic(초1·2)부터 IM3(중·고)까지 함께 · 약 40~60분 (언제든 저장)')
+      h(
+        'p',
+        null,
+        '불이 꺼진 우주정거장에서 사라진 ',
+        h('b', null, '"별의 심장"'),
+        '을 찾아요. 방 4개의 수수께끼를 영어로 힘을 합쳐 풀고, 마지막에는 용의자 4명 중 거짓말을 하는 한 명을 찾아내요.'
+      ),
+      h(
+        'p',
+        { class: 'hint' },
+        '1~4명 · 휴대폰 1~4대 · Basic(초1·2)부터 IM3(중·고)까지 함께 · 약 40~60분 (언제든 저장)'
+      )
     ),
     save && team
       ? h(
           'div',
           { class: 'card stack gm-continue' },
           h('div', { class: 'card-title' }, icon('play'), '이어하기'),
-          h('div', { class: 'gm-faces' }, team.players.map((p, i) => (save.local.includes(i) ? face(p) : h('span', { class: 'gm-face-chip off' }, avatarOf(p.avatar).emoji)))),
-          h('p', { class: 'hint' }, `${progress} · 팀 코드 ${formatCode(save.code)} · 플레이 ${clockText(save.playMs)}`),
+          h(
+            'div',
+            { class: 'gm-faces' },
+            team.players.map((p, i) =>
+              save.local.includes(i) ? face(p) : h('span', { class: 'gm-face-chip off' }, avatarOf(p.avatar).emoji)
+            )
+          ),
+          h(
+            'p',
+            { class: 'hint' },
+            `${progress} · 팀 코드 ${formatCode(save.code)} · 플레이 ${clockText(save.playMs)}`
+          ),
           btn('이어하기', () => start(save), { cls: 'btn primary big', ico: 'play' })
         )
       : null,
@@ -63,7 +104,11 @@ function renderHome() {
       { class: 'card stack' },
       btn('새 미션 만들기', () => renderSetup(), { cls: 'btn primary big', ico: 'plus' }),
       btn('팀 코드로 참가하기', () => renderJoin(), { cls: 'btn big', ico: 'zap' }),
-      h('p', { class: 'hint' }, '여러 대로 할 때: 한 폰에서 미션을 만들고, 나머지 폰은 그 폰에 나온 팀 코드로 참가해요.')
+      h(
+        'p',
+        { class: 'hint' },
+        '여러 대로 할 때: 한 폰에서 미션을 만들고, 나머지 폰은 그 폰에 나온 팀 코드로 참가해요.'
+      )
     ),
     howTo(),
     logCard()
@@ -78,13 +123,48 @@ function howTo() {
     h(
       'ul',
       { class: 'steps' },
-      h('li', null, h('b', null, '이야기: '), '방 4개(도킹 베이 → 우주 정원 → 로봇 작업실 → 관제실)를 차례로 되살려요. 방마다 기계 4개를 고치면 문 글자가 하나씩 나오고, 네 글자로 문을 열어요. 방을 나갈 때마다 도우미 로봇 핍의 기억 칩에서 증거가 나와요.'),
-      h('li', null, h('b', null, '협동: '), '내 화면의 단서는 다른 사람의 잠금을 여는 데 필요해요. 단서를 가진 사람은 영어로 알려 주고, 잠금을 푸는 사람은 영어로 물어봐요. 화면에 말할 문장이 수준에 맞게 나와요.'),
-      h('li', null, h('b', null, '휴대폰 여러 대: '), '폰끼리 인터넷으로 연결하지 않아요. 같은 팀 코드면 모든 폰에 같은 게임이 만들어지고, 각자 자기 임무만 열려요. 그래서 서로 말해야만 풀려요.'),
-      h('li', null, h('b', null, '휴대폰 한 대: '), '모두 한 폰으로 해요. 임무마다 누구 차례인지 얼굴이 표시돼요. 혼자 해도 돼요.'),
-      h('li', null, h('b', null, '수준: '), 'Basic(초1·2)은 그림·색·숫자와 한국어 도움, IM1(초3·4)은 짧은 문장, IM2(초5·6)는 거꾸로·더하기처럼 한 번 더 생각하기, IM3(중·고)는 긴 글 추론·암호·영어로 설명하기. 같은 문제도 맡은 사람의 수준에 맞게 바뀌어요.'),
-      h('li', null, h('b', null, '역할: '), `${ROLES.buddy.emoji} 핍의 짝꿍(가장 낮은 수준): 힌트 책을 갖고 있어 팀에 영어로 힌트를 읽어 줘요. ${ROLES.captain.emoji} 캡틴(가장 높은 수준): 어려운 기록을 읽고 마지막 추리를 이끌어요. ${ROLES.engineer.emoji} 엔지니어 · ${ROLES.navigator.emoji} 항해사.`),
-      h('li', null, h('b', null, '마지막 추리: '), '용의자 4명에게 영어로 질문하고, 증거(그림자 크기·잎의 색·바닥의 흔적·출입 기록)와 비교해 거짓말쟁이를 찾아요. 누가 범인이든 무섭지 않은 이유가 있고, 사과하고 화해해요. 범인은 판마다 바뀌어요.'),
+      h(
+        'li',
+        null,
+        h('b', null, '이야기: '),
+        '방 4개(도킹 베이 → 우주 정원 → 로봇 작업실 → 관제실)를 차례로 되살려요. 방마다 기계 4개를 고치면 문 글자가 하나씩 나오고, 네 글자로 문을 열어요. 방을 나갈 때마다 도우미 로봇 핍의 기억 칩에서 증거가 나와요.'
+      ),
+      h(
+        'li',
+        null,
+        h('b', null, '협동: '),
+        '내 화면의 단서는 다른 사람의 잠금을 여는 데 필요해요. 단서를 가진 사람은 영어로 알려 주고, 잠금을 푸는 사람은 영어로 물어봐요. 화면에 말할 문장이 수준에 맞게 나와요.'
+      ),
+      h(
+        'li',
+        null,
+        h('b', null, '휴대폰 여러 대: '),
+        '폰끼리 인터넷으로 연결하지 않아요. 같은 팀 코드면 모든 폰에 같은 게임이 만들어지고, 각자 자기 임무만 열려요. 그래서 서로 말해야만 풀려요.'
+      ),
+      h(
+        'li',
+        null,
+        h('b', null, '휴대폰 한 대: '),
+        '모두 한 폰으로 해요. 임무마다 누구 차례인지 얼굴이 표시돼요. 혼자 해도 돼요.'
+      ),
+      h(
+        'li',
+        null,
+        h('b', null, '수준: '),
+        'Basic(초1·2)은 그림·색·숫자와 한국어 도움, IM1(초3·4)은 짧은 문장, IM2(초5·6)는 거꾸로·더하기처럼 한 번 더 생각하기, IM3(중·고)는 긴 글 추론·암호·영어로 설명하기. 같은 문제도 맡은 사람의 수준에 맞게 바뀌어요.'
+      ),
+      h(
+        'li',
+        null,
+        h('b', null, '역할: '),
+        `${ROLES.buddy.emoji} 핍의 짝꿍(가장 낮은 수준): 힌트 책을 갖고 있어 팀에 영어로 힌트를 읽어 줘요. ${ROLES.captain.emoji} 캡틴(가장 높은 수준): 어려운 기록을 읽고 마지막 추리를 이끌어요. ${ROLES.engineer.emoji} 엔지니어 · ${ROLES.navigator.emoji} 항해사.`
+      ),
+      h(
+        'li',
+        null,
+        h('b', null, '마지막 추리: '),
+        '용의자 4명에게 영어로 질문하고, 증거(그림자 크기·잎의 색·바닥의 흔적·출입 기록)와 비교해 거짓말쟁이를 찾아요. 누가 범인이든 무섭지 않은 이유가 있고, 사과하고 화해해요. 범인은 판마다 바뀌어요.'
+      ),
       h(
         'li',
         null,
@@ -94,7 +174,12 @@ function howTo() {
           : '키가 없어도 질문 카드와 음성 인식으로 모든 내용을 할 수 있어요. ',
         'Gemini API는 만 18세 이상 이용 조건이라, 자유 대화는 보호자 폰에서 함께 하세요.'
       ),
-      h('li', null, h('b', null, '마이크: '), '말하기 연습과 말로 여는 잠금에 휴대폰의 음성 인식을 써요(키 불필요). 인식이 안 되면 글로 써도 돼요.')
+      h(
+        'li',
+        null,
+        h('b', null, '마이크: '),
+        '말하기 연습과 말로 여는 잠금에 휴대폰의 음성 인식을 써요(키 불필요). 인식이 안 되면 글로 써도 돼요.'
+      )
     )
   );
 }
@@ -109,16 +194,22 @@ function logCard() {
     h(
       'ul',
       { class: 'history' },
-      list.slice(0, 8).map((x) =>
-        h(
-          'li',
-          { class: 'gm-logrow' },
-          h('span', null, new Date(x.at).toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' })),
-          h('span', null, (x.players || []).map((p) => avatarOf(p.avatar).emoji).join('')),
-          h('span', { class: 'gm-logstars' }, '★'.repeat(x.stars || 1)),
-          h('small', null, `범인 ${suspectOf(x.culprit)?.ko ?? '?'} · ${clockText(x.ms || 0)} · 영어 ${x.said || 0}번`)
+      list
+        .slice(0, 8)
+        .map((x) =>
+          h(
+            'li',
+            { class: 'gm-logrow' },
+            h('span', null, new Date(x.at).toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' })),
+            h('span', null, (x.players || []).map((p) => avatarOf(p.avatar).emoji).join('')),
+            h('span', { class: 'gm-logstars' }, '★'.repeat(x.stars || 1)),
+            h(
+              'small',
+              null,
+              `범인 ${suspectOf(x.culprit)?.ko ?? '?'} · ${clockText(x.ms || 0)} · 영어 ${x.said || 0}번`
+            )
+          )
         )
-      )
     )
   );
 }
@@ -128,7 +219,9 @@ function logCard() {
 function renderSetup() {
   const prefs = getGamePrefs();
   // 지난번 팀(얼굴·수준)을 기억해 둔다
-  let team = (prefs.team || []).filter((p) => AVATARS.some((a) => a.id === p.avatar) && LEVELS.includes(p.level)).slice(0, MAX_PLAYERS);
+  let team = (prefs.team || [])
+    .filter((p) => AVATARS.some((a) => a.id === p.avatar) && LEVELS.includes(p.level))
+    .slice(0, MAX_PLAYERS);
   const list = h('div', { class: 'stack gm-players' });
   const grid = h('div', { class: 'gm-avatars' });
   const startBtn = btn('팀 만들기', () => create(), { cls: 'btn primary big', ico: 'check' });
@@ -164,7 +257,16 @@ function renderSetup() {
         h(
           'div',
           { class: 'gm-player' },
-          h('div', { class: 'row between' }, h('b', null, h('span', { class: 'gm-emoji' }, a.emoji), ` ${a.name}`), h('span', { class: 'hint' }, `${ROLES[roles.roles[i]].emoji} ${ROLES[roles.roles[i]].name}${team.length > 1 && i === roles.buddy ? ' (힌트 담당)' : ''}`)),
+          h(
+            'div',
+            { class: 'row between' },
+            h('b', null, h('span', { class: 'gm-emoji' }, a.emoji), ` ${a.name}`),
+            h(
+              'span',
+              { class: 'hint' },
+              `${ROLES[roles.roles[i]].emoji} ${ROLES[roles.roles[i]].name}${team.length > 1 && i === roles.buddy ? ' (힌트 담당)' : ''}`
+            )
+          ),
           segmented(
             LEVELS.map((lv) => ({ value: lv, label: LEVEL_INFO[lv].label })),
             p.level,
@@ -184,7 +286,12 @@ function renderSetup() {
 
   function create() {
     const old = getGameSave();
-    if (old && old.stage !== 'done' && !window.confirm?.('이 폰에 하던 미션이 있어요. 새 미션을 만들면 지난 진행은 지워져요. 만들까요?')) return;
+    if (
+      old &&
+      old.stage !== 'done' &&
+      !window.confirm?.('이 폰에 하던 미션이 있어요. 새 미션을 만들면 지난 진행은 지워져요. 만들까요?')
+    )
+      return;
     updateGamePrefs({ team });
     const code = encodeTeam({ seed: newSeed(), players: team });
     renderCode(code, { fresh: true });
@@ -198,7 +305,11 @@ function renderSetup() {
       h('div', { class: 'card-title' }, icon('plus'), '누가 함께하나요? (1~4명)'),
       grid,
       list,
-      h('p', { class: 'hint' }, '수준에 따라 같은 문제도 영어와 생각할 거리가 달라져요. 가장 낮은 수준인 사람이 "핍의 짝꿍"이 되어 힌트를 맡아요.'),
+      h(
+        'p',
+        { class: 'hint' },
+        '수준에 따라 같은 문제도 영어와 생각할 거리가 달라져요. 가장 낮은 수준인 사람이 "핍의 짝꿍"이 되어 힌트를 맡아요.'
+      ),
       startBtn,
       btn('처음으로', () => renderHome(), { cls: 'btn ghost', ico: 'back' })
     )
@@ -211,7 +322,8 @@ function shareCode(code) {
   const url = `${location.origin}${location.pathname}#/game?join=${code}`;
   const text = `${TITLE.ko} 팀 코드: ${formatCode(code)}\n${url}`;
   shareText(text, TITLE.en).then((ok) => {
-    if (!ok) copyText(text).then((c) => toast(c ? '코드를 복사했어요. 카카오톡 등에 붙여 넣으세요.' : '공유하지 못했어요'));
+    if (!ok)
+      copyText(text).then((c) => toast(c ? '코드를 복사했어요. 카카오톡 등에 붙여 넣으세요.' : '공유하지 못했어요'));
   });
 }
 
@@ -248,7 +360,8 @@ function renderCode(code, { fresh = false, joined = false, local } = {}) {
   function go() {
     primeSpeech();
     const old = getGameSave();
-    const save = old && old.code === code && !fresh ? { ...old, local: [...pick].sort() } : newSave(code, [...pick].sort());
+    const save =
+      old && old.code === code && !fresh ? { ...old, local: [...pick].sort() } : newSave(code, [...pick].sort());
     setGameSave(save);
     start(save);
   }
@@ -265,9 +378,18 @@ function renderCode(code, { fresh = false, joined = false, local } = {}) {
             'div',
             { class: 'row wrap center-row' },
             btn('공유', () => shareCode(code), { cls: 'btn small', ico: 'share' }),
-            btn('복사', () => copyText(formatCode(code)).then((ok) => toast(ok ? '복사했어요' : '복사하지 못했어요')), { cls: 'btn small', ico: 'copy' })
+            btn('복사', () => copyText(formatCode(code)).then((ok) => toast(ok ? '복사했어요' : '복사하지 못했어요')), {
+              cls: 'btn small',
+              ico: 'copy',
+            })
           ),
-      joined ? null : h('p', { class: 'hint' }, '다른 폰: English Helper → 게임 탭 → "팀 코드로 참가하기" → 이 코드 입력 (또는 공유한 링크 열기). 폰이 한 대면 그냥 시작하세요.'),
+      joined
+        ? null
+        : h(
+            'p',
+            { class: 'hint' },
+            '다른 폰: English Helper → 게임 탭 → "팀 코드로 참가하기" → 이 코드 입력 (또는 공유한 링크 열기). 폰이 한 대면 그냥 시작하세요.'
+          ),
       h('div', { class: 'gm-faces' }, team.players.map(face))
     ),
     h(
@@ -275,7 +397,11 @@ function renderCode(code, { fresh = false, joined = false, local } = {}) {
       { class: 'card stack' },
       h('b', null, '이 폰으로 하는 사람을 모두 골라요'),
       chips,
-      h('p', { class: 'hint' }, '다른 폰으로 하는 사람은 빼 주세요. 모든 사람이 어느 한 폰에는 꼭 있어야 해요. 게임 중에도 메뉴에서 바꿀 수 있어요.'),
+      h(
+        'p',
+        { class: 'hint' },
+        '다른 폰으로 하는 사람은 빼 주세요. 모든 사람이 어느 한 폰에는 꼭 있어야 해요. 게임 중에도 메뉴에서 바꿀 수 있어요.'
+      ),
       startBtn,
       btn('처음으로', () => renderHome(), { cls: 'btn ghost', ico: 'back' })
     )

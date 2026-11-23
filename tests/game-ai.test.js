@@ -37,7 +37,10 @@ function mockFetch(reply) {
 }
 
 test('핍: 방 정보·수준 안내·답을 말하지 않는 규칙을 보내고, 대화 기록을 번갈아 붙인다', async () => {
-  const calls = mockFetch({ reply: 'Beep-boop! The radio is next to the shuttle.', ko: '삐빅! 무전기는 셔틀 옆에 있어.' });
+  const calls = mockFetch({
+    reply: 'Beep-boop! The radio is next to the shuttle.',
+    ko: '삐빅! 무전기는 셔틀 옆에 있어.',
+  });
   const r = await askPip({
     room: 0,
     level: 'basic',

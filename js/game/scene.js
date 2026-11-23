@@ -19,14 +19,26 @@ export function createScene({ onHot, onCrystal }) {
   const root = h('div', { class: 'gm-scene' });
   const layers = {};
   for (const name of Object.keys(DEPTH)) {
-    const el = svg(`${-M} 0 ${W + 2 * M} ${H}`, { class: `gm-layer gm-${name}`, preserveAspectRatio: 'xMinYMin meet', 'aria-hidden': name === 'far' ? 'true' : null });
+    const el = svg(`${-M} 0 ${W + 2 * M} ${H}`, {
+      class: `gm-layer gm-${name}`,
+      preserveAspectRatio: 'xMinYMin meet',
+      'aria-hidden': name === 'far' ? 'true' : null,
+    });
     layers[name] = el;
     root.append(el);
   }
   const tint = h('div', { class: 'gm-tint', hidden: true });
   const dark = h('div', { class: 'gm-dark', hidden: true });
-  const edgeL = h('button', { type: 'button', class: 'gm-edge left', 'aria-label': '왼쪽 보기', onclick: () => nudge(-1) }, '‹');
-  const edgeR = h('button', { type: 'button', class: 'gm-edge right', 'aria-label': '오른쪽 보기', onclick: () => nudge(1) }, '›');
+  const edgeL = h(
+    'button',
+    { type: 'button', class: 'gm-edge left', 'aria-label': '왼쪽 보기', onclick: () => nudge(-1) },
+    '‹'
+  );
+  const edgeR = h(
+    'button',
+    { type: 'button', class: 'gm-edge right', 'aria-label': '오른쪽 보기', onclick: () => nudge(1) },
+    '›'
+  );
   root.append(tint, dark, edgeL, edgeR);
 
   let data = null;
@@ -207,7 +219,13 @@ export function createScene({ onHot, onCrystal }) {
       layers[c.layer].append(
         s(
           'g',
-          { class: 'gm-crystal', 'data-crystal': c.id, role: 'button', 'aria-label': '별 조각', onclick: (e) => collect(c.id, e.currentTarget) },
+          {
+            class: 'gm-crystal',
+            'data-crystal': c.id,
+            role: 'button',
+            'aria-label': '별 조각',
+            onclick: (e) => collect(c.id, e.currentTarget),
+          },
           crystal(c.x, c.y, 0.9),
           s('circle', { cx: c.x, cy: c.y, r: 46, fill: 'transparent' })
         )
@@ -251,7 +269,17 @@ export function createScene({ onHot, onCrystal }) {
       if (!m) continue;
       const gEl = markGroups[hs.layer];
       if (m.kind === 'mine' && m.glow)
-        gEl.append(s('rect', { class: 'gm-mark mine', x: hs.x - 6, y: hs.y - 6, width: hs.w + 12, height: hs.h + 12, rx: 22, fill: 'none' }));
+        gEl.append(
+          s('rect', {
+            class: 'gm-mark mine',
+            x: hs.x - 6,
+            y: hs.y - 6,
+            width: hs.w + 12,
+            height: hs.h + 12,
+            rx: 22,
+            fill: 'none',
+          })
+        );
       if (m.badge || m.kind === 'done') {
         const bx = Math.min(hs.x + hs.w - 8, W - 34); // 방 끝에 붙은 물체도 배지가 잘리지 않게
         const by = Math.max(hs.y + 8, 34);
@@ -260,7 +288,11 @@ export function createScene({ onHot, onCrystal }) {
             'g',
             { class: `gm-badge ${m.kind}` },
             s('circle', { cx: bx, cy: by, r: 30 }),
-            s('text', { x: bx, y: by + 11, 'text-anchor': 'middle', 'font-size': 32 }, m.kind === 'done' ? '✓' : m.badge)
+            s(
+              'text',
+              { x: bx, y: by + 11, 'text-anchor': 'middle', 'font-size': 32 },
+              m.kind === 'done' ? '✓' : m.badge
+            )
           )
         );
       }

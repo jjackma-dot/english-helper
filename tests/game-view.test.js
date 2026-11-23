@@ -8,7 +8,8 @@ import { installEnv, mount, button, descendants, text } from './platform-env.js'
 const env = installEnv({ userAgent: 'Mozilla/5.0 (Linux; Android 16) Chrome/140 Mobile', settings: {} });
 // 움직임 줄이기: 문을 지나가는 장면을 짧게
 const baseMatch = globalThis.matchMedia;
-globalThis.matchMedia = (q) => (/reduced-motion/.test(q) ? { matches: true, addEventListener() {}, removeEventListener() {} } : baseMatch(q));
+globalThis.matchMedia = (q) =>
+  /reduced-motion/.test(q) ? { matches: true, addEventListener() {}, removeEventListener() {} } : baseMatch(q);
 globalThis.performance ??= { now: () => Date.now() };
 
 const view = await import('../js/views/game.js');
@@ -48,7 +49,10 @@ async function talkThrough() {
 /** 잠금 입력 장치에 정답을 넣는다 (방 1의 네 가지: 색·숫자판·모양·스위치) */
 function enter(lock) {
   const p = panelEl();
-  const opt = (v) => descendants(p).find((e) => e.attributes['data-value'] === String(v)).click();
+  const opt = (v) =>
+    descendants(p)
+      .find((e) => e.attributes['data-value'] === String(v))
+      .click();
   if (lock.widget === 'colors' || lock.widget === 'keypad') for (const v of lock.expected) opt(v);
   else if (lock.widget === 'shape') opt(lock.expected);
   else if (lock.widget === 'switches') {
@@ -73,7 +77,9 @@ test('팀 만들기: 얼굴 두 명·수준 → 팀 코드, 지난 팀 기억', 
   avatar('원숭이').click();
   const players = byClass('gm-player');
   assert.equal(players.length, 2);
-  descendants(players[1]).find((e) => e.tagName === 'BUTTON' && e.textContent === 'IM3').click();
+  descendants(players[1])
+    .find((e) => e.tagName === 'BUTTON' && e.textContent === 'IM3')
+    .click();
   assert.match(text(root), /핍의 짝꿍/);
   assert.match(text(root), /캡틴/);
   button(root, '팀 만들기').click();
@@ -98,13 +104,21 @@ test('코드로 참가: 틀린 코드는 알려 주고, 맞는 코드는 이 폰
   input.value = 'ABCD-EFGH';
   button(root, '확인').click();
   assert.match(text(root), /팀 코드가 맞지 않아요/);
-  const code = encodeTeam({ seed: 9, players: [{ avatar: 'honey', level: 'basic' }, { avatar: 'fox', level: 'im2' }] });
+  const code = encodeTeam({
+    seed: 9,
+    players: [
+      { avatar: 'honey', level: 'basic' },
+      { avatar: 'fox', level: 'im2' },
+    ],
+  });
   input.value = code.toLowerCase();
   button(root, '확인').click();
   assert.match(text(root), /팀에 참가했어요/);
   const start = button(root, '미션 시작');
   assert.ok(start.disabled, '참가하는 폰은 사람을 골라야 시작');
-  descendants(root).find((e) => e.tagName === 'BUTTON' && e.textContent.includes('여우')).click();
+  descendants(root)
+    .find((e) => e.tagName === 'BUTTON' && e.textContent.includes('여우'))
+    .click();
   assert.ok(!button(root, '미션 시작').disabled);
   button(root, '처음으로').click();
 });
@@ -154,7 +168,13 @@ test('게임: 이야기 → 방 1의 내 임무를 모두 풀고 문 글자로 �
 });
 
 test('두 명: 다른 사람의 임무는 열리지 않고 영어로 물어보게 한다, 힌트 책은 짝꿍 폰에만', async () => {
-  const code = encodeTeam({ seed: 5, players: [{ avatar: 'boar', level: 'basic' }, { avatar: 'monkey', level: 'im3' }] });
+  const code = encodeTeam({
+    seed: 5,
+    players: [
+      { avatar: 'boar', level: 'basic' },
+      { avatar: 'monkey', level: 'im3' },
+    ],
+  });
   const s = newSave(code, [1]); // 이 폰: 원숭이(IM3, 캡틴)만
   s.stage = 'play';
   setSave(s);
@@ -174,7 +194,9 @@ test('두 명: 다른 사람의 임무는 열리지 않고 영어로 물어보�
   assert.match(text(panelEl()), /핍의 짝꿍 🐗 멧돼지의 폰/);
   assert.match(text(panelEl()), /Can you give us a hint, please\?/);
   button(panelEl(), '여기서 볼게요').click();
-  descendants(panelEl()).find((e) => e.classList.contains('gm-hintrow')).click();
+  descendants(panelEl())
+    .find((e) => e.classList.contains('gm-hintrow'))
+    .click();
   assert.match(text(panelEl()), /Hint 1/);
   button(panelEl(), '다음 힌트').click();
   assert.match(text(panelEl()), /Hint 2/);
@@ -196,8 +218,12 @@ test('마지막 방: 잘못 지목하면 반박, 맞게 지목하면 증거 두 
   const wrong = ['bolt', 'zeek', 'mira', 'momo'].find((x) => x !== culprit);
   // 용의자에게 묻기 (질문 카드)
   button(root, '용의자').click();
-  descendants(panelEl()).find((e) => e.classList.contains('gm-pick') && e.textContent.includes(suspectOf(culprit).name)).click();
-  descendants(panelEl()).filter((e) => e.classList.contains('gm-qcard'))[2].click();
+  descendants(panelEl())
+    .find((e) => e.classList.contains('gm-pick') && e.textContent.includes(suspectOf(culprit).name))
+    .click();
+  descendants(panelEl())
+    .filter((e) => e.classList.contains('gm-qcard'))[2]
+    .click();
   // 마이크가 있으면 먼저 질문을 소리 내어 읽게 한다 (건너뛸 수 있다)
   await until(() => button(panelEl(), '그냥 묻기'), '소리 내어 읽기');
   button(panelEl(), '그냥 묻기').click();
@@ -205,7 +231,9 @@ test('마지막 방: 잘못 지목하면 반박, 맞게 지목하면 증거 두 
   assert.match(text(panelEl()), /stayed|sleeping|Nope|all night/i, '범인도 계속 있었다고 거짓말');
   // 잘못 지목
   button(root, '범인 지목').click();
-  descendants(panelEl()).find((e) => e.classList.contains('gm-pick') && e.textContent.includes(suspectOf(wrong).name)).click();
+  descendants(panelEl())
+    .find((e) => e.classList.contains('gm-pick') && e.textContent.includes(suspectOf(wrong).name))
+    .click();
   button(panelEl(), '네, 지목해요!').click();
   await until(() => byClass('gm-talk').length, '반박');
   assert.match(text(byClass('gm-talk')[0]), /It wasn't me|Look at me|I'm a robot|I don't use oil/);
@@ -213,7 +241,9 @@ test('마지막 방: 잘못 지목하면 반박, 맞게 지목하면 증거 두 
   assert.deepEqual(save().accused, [wrong]);
   // 맞게 지목 → 증거 두 개
   button(root, '범인 지목').click();
-  descendants(panelEl()).find((e) => e.classList.contains('gm-pick') && e.textContent.includes(suspectOf(culprit).name)).click();
+  descendants(panelEl())
+    .find((e) => e.classList.contains('gm-pick') && e.textContent.includes(suspectOf(culprit).name))
+    .click();
   button(panelEl(), '네, 지목해요!').click();
   await until(() => panelEl() && /Why me/.test(text(panelEl())), '왜 나야?');
   const go = button(panelEl(), '증거를 보여 줘요!');

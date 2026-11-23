@@ -11,7 +11,8 @@ import { canListen, listenOnce } from './voice.js';
 
 const hex = (c) => COLORS[c]?.hex ?? c;
 const dot = (c, cls = 'gw-dot') => h('span', { class: cls, style: { background: hex(c) } });
-const tool = (label, ico, onclick, cls = 'gw-tool') => h('button', { type: 'button', class: cls, onclick }, icon(ico, { size: 18 }), label ? h('span', null, label) : null);
+const tool = (label, ico, onclick, cls = 'gw-tool') =>
+  h('button', { type: 'button', class: cls, onclick }, icon(ico, { size: 18 }), label ? h('span', null, label) : null);
 
 /** 차례대로 누르는 장치의 공통 틀 (빈칸 + 버튼 + 지우기) */
 function sequence(lock, { options, renderOption, renderSlot, onPress, extra, padCls = '' }) {
@@ -20,7 +21,13 @@ function sequence(lock, { options, renderOption, renderSlot, onPress, extra, pad
   const draw = () => {
     clear(slots);
     for (let i = 0; i < lock.len; i++)
-      slots.append(h('span', { class: `gw-slot${value[i] ? ' on' : ''}${i === value.length ? ' next' : ''}` }, value[i] ? renderSlot(value[i]) : String(i + 1)));
+      slots.append(
+        h(
+          'span',
+          { class: `gw-slot${value[i] ? ' on' : ''}${i === value.length ? ' next' : ''}` },
+          value[i] ? renderSlot(value[i]) : String(i + 1)
+        )
+      );
   };
   const api = {
     get: () => [...value],
@@ -103,9 +110,37 @@ function armGrid(lock) {
   const draw = () => {
     while (g.firstChild) g.firstChild.remove();
     for (let y = 0; y < rows; y++)
-      for (let x = 0; x < cols; x++) g.append(s('rect', { x: x * cell + 2, y: y * cell + 2, width: cell - 4, height: cell - 4, rx: 6, fill: '#0f2d44', stroke: '#1c4a66' }));
-    g.append(s('polyline', { points: trail.map(([x, y]) => `${x * cell + cell / 2},${y * cell + cell / 2}`).join(' '), fill: 'none', stroke: '#ffb020', 'stroke-width': 4, 'stroke-linecap': 'round' }));
-    g.append(s('circle', { cx: pos[0] * cell + cell / 2, cy: pos[1] * cell + cell / 2, r: 11, fill: '#ffb020', stroke: '#ffffff', 'stroke-width': 3 }));
+      for (let x = 0; x < cols; x++)
+        g.append(
+          s('rect', {
+            x: x * cell + 2,
+            y: y * cell + 2,
+            width: cell - 4,
+            height: cell - 4,
+            rx: 6,
+            fill: '#0f2d44',
+            stroke: '#1c4a66',
+          })
+        );
+    g.append(
+      s('polyline', {
+        points: trail.map(([x, y]) => `${x * cell + cell / 2},${y * cell + cell / 2}`).join(' '),
+        fill: 'none',
+        stroke: '#ffb020',
+        'stroke-width': 4,
+        'stroke-linecap': 'round',
+      })
+    );
+    g.append(
+      s('circle', {
+        cx: pos[0] * cell + cell / 2,
+        cy: pos[1] * cell + cell / 2,
+        r: 11,
+        fill: '#ffb020',
+        stroke: '#ffffff',
+        'stroke-width': 3,
+      })
+    );
   };
   const STEP = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
   const move = (d) => {
@@ -122,7 +157,11 @@ function armGrid(lock) {
   };
   draw();
   return {
-    el: h('div', { class: 'gw-arm' }, svg(`0 0 ${cols * cell} ${rows * cell}`, { class: 'gw-armgrid', role: 'img', 'aria-label': 'robot arm map' }, g)),
+    el: h(
+      'div',
+      { class: 'gw-arm' },
+      svg(`0 0 ${cols * cell} ${rows * cell}`, { class: 'gw-armgrid', role: 'img', 'aria-label': 'robot arm map' }, g)
+    ),
     move,
     undo(value) {
       pos[0] = start[0];
@@ -143,7 +182,10 @@ function arrows(lock) {
   const grid = armGrid(lock);
   return sequence(lock, {
     options: ['up', 'left', 'right', 'down'],
-    renderOption: (d) => [h('span', { class: 'gw-arrow' }, DIRS[d].arrow), h('span', { class: 'gw-label', lang: 'en' }, DIRS[d].en)],
+    renderOption: (d) => [
+      h('span', { class: 'gw-arrow' }, DIRS[d].arrow),
+      h('span', { class: 'gw-label', lang: 'en' }, DIRS[d].en),
+    ],
     renderSlot: (d) => DIRS[d].arrow,
     onPress: (d) => grid.move(d),
     extra: grid,
@@ -173,9 +215,17 @@ function dial(lock) {
     el: h(
       'div',
       { class: 'gw gw-dial' },
-      h('button', { type: 'button', class: 'gw-round', 'aria-label': '줄이기', onclick: () => set(v - 1) }, icon('minus', { size: 28 })),
+      h(
+        'button',
+        { type: 'button', class: 'gw-round', 'aria-label': '줄이기', onclick: () => set(v - 1) },
+        icon('minus', { size: 28 })
+      ),
       out,
-      h('button', { type: 'button', class: 'gw-round', 'aria-label': '늘리기', onclick: () => set(v + 1) }, icon('plus', { size: 28 }))
+      h(
+        'button',
+        { type: 'button', class: 'gw-round', 'aria-label': '늘리기', onclick: () => set(v + 1) },
+        icon('plus', { size: 28 })
+      )
     ),
     get: () => v,
     ready: () => true,
@@ -312,7 +362,7 @@ function choice(lock, multi = false) {
   );
   return {
     el: h('div', { class: `gw gw-cards gw-${kind}` }, btns),
-    get: () => (multi ? [...picked] : picked[0] ?? null),
+    get: () => (multi ? [...picked] : (picked[0] ?? null)),
     ready: () => (multi ? picked.length === lock.pick : picked.length === 1),
     reset() {
       picked.length = 0;
@@ -414,12 +464,24 @@ function clock(lock) {
       h(
         'div',
         { class: 'gw-dial' },
-        h('button', { type: 'button', class: 'gw-round', 'aria-label': '한 시간 전', onclick: () => setH(-1) }, icon('minus', { size: 26 })),
+        h(
+          'button',
+          { type: 'button', class: 'gw-round', 'aria-label': '한 시간 전', onclick: () => setH(-1) },
+          icon('minus', { size: 26 })
+        ),
         out,
-        h('button', { type: 'button', class: 'gw-round', 'aria-label': '한 시간 뒤', onclick: () => setH(1) }, icon('plus', { size: 26 }))
+        h(
+          'button',
+          { type: 'button', class: 'gw-round', 'aria-label': '한 시간 뒤', onclick: () => setH(1) },
+          icon('plus', { size: 26 })
+        )
       ),
       h('div', { class: 'gw-row center' }, minutes),
-      h('p', { class: 'gw-note' }, lock.h24 ? '− + 로 시(0~23), 아래에서 분을 고르세요' : '− + 로 시(1~12), 아래에서 분을 고르세요')
+      h(
+        'p',
+        { class: 'gw-note' },
+        lock.h24 ? '− + 로 시(0~23), 아래에서 분을 고르세요' : '− + 로 시(1~12), 아래에서 분을 고르세요'
+      )
     ),
     get: () => ({ h: hh, m: mm }),
     ready: () => true,
@@ -447,8 +509,29 @@ function wires(lock) {
           draw();
         },
       },
-      s('rect', { x: 14, y: ys[i] - 20, width: 64, height: 40, rx: 10, fill: hex(c), stroke: '#ffffff', 'stroke-width': 3 }),
-      s('text', { x: 46, y: ys[i] + 6, 'text-anchor': 'middle', 'font-size': 15, 'font-weight': 700, fill: '#10131f', 'font-family': 'system-ui' }, COLORS[c].en)
+      s('rect', {
+        x: 14,
+        y: ys[i] - 20,
+        width: 64,
+        height: 40,
+        rx: 10,
+        fill: hex(c),
+        stroke: '#ffffff',
+        'stroke-width': 3,
+      }),
+      s(
+        'text',
+        {
+          x: 46,
+          y: ys[i] + 6,
+          'text-anchor': 'middle',
+          'font-size': 15,
+          'font-weight': 700,
+          fill: '#10131f',
+          'font-family': 'system-ui',
+        },
+        COLORS[c].en
+      )
     )
   );
   const right = lock.right.map((r, i) =>
@@ -465,9 +548,34 @@ function wires(lock) {
           draw();
         },
       },
-      s('rect', { x: 236, y: ys[i] - 22, width: 74, height: 44, rx: 12, fill: '#e8f0ff', stroke: '#9fb0cc', 'stroke-width': 3 }),
-      r.dots ? Array.from({ length: r.dots }, (_, k) => s('circle', { cx: 252 + k * 9, cy: ys[i] + 12, r: 3, fill: '#2a63b8' })) : null,
-      s('text', { x: 273, y: ys[i] + (r.dots ? 2 : 7), 'text-anchor': 'middle', 'font-size': r.label.length > 3 ? 16 : 20, 'font-weight': 800, fill: '#2a63b8', 'font-family': 'system-ui' }, r.label)
+      s('rect', {
+        x: 236,
+        y: ys[i] - 22,
+        width: 74,
+        height: 44,
+        rx: 12,
+        fill: '#e8f0ff',
+        stroke: '#9fb0cc',
+        'stroke-width': 3,
+      }),
+      r.dots
+        ? Array.from({ length: r.dots }, (_, k) =>
+            s('circle', { cx: 252 + k * 9, cy: ys[i] + 12, r: 3, fill: '#2a63b8' })
+          )
+        : null,
+      s(
+        'text',
+        {
+          x: 273,
+          y: ys[i] + (r.dots ? 2 : 7),
+          'text-anchor': 'middle',
+          'font-size': r.label.length > 3 ? 16 : 20,
+          'font-weight': 800,
+          fill: '#2a63b8',
+          'font-family': 'system-ui',
+        },
+        r.label
+      )
     )
   );
   const draw = () => {
@@ -476,7 +584,15 @@ function wires(lock) {
       const v = value[c];
       if (v == null) return;
       const j = lock.right.findIndex((r) => r.value === v);
-      lines.append(s('path', { d: `M78 ${ys[i]}C160 ${ys[i]} 160 ${ys[j]} 236 ${ys[j]}`, fill: 'none', stroke: hex(c), 'stroke-width': 8, 'stroke-linecap': 'round' }));
+      lines.append(
+        s('path', {
+          d: `M78 ${ys[i]}C160 ${ys[i]} 160 ${ys[j]} 236 ${ys[j]}`,
+          fill: 'none',
+          stroke: hex(c),
+          'stroke-width': 8,
+          'stroke-linecap': 'round',
+        })
+      );
     });
     left.forEach((gEl, i) => gEl.firstChild.setAttribute('stroke', sel === lock.left[i] ? '#ffd23f' : '#ffffff'));
     left.forEach((gEl, i) => gEl.firstChild.setAttribute('stroke-width', sel === lock.left[i] ? 6 : 3));
@@ -486,7 +602,14 @@ function wires(lock) {
     el: h(
       'div',
       { class: 'gw gw-wires' },
-      svg('0 0 320 200', { class: 'gw-wiresvg' }, s('rect', { x: 0, y: 0, width: 320, height: 200, rx: 16, fill: '#1d2440' }), lines, left, right),
+      svg(
+        '0 0 320 200',
+        { class: 'gw-wiresvg' },
+        s('rect', { x: 0, y: 0, width: 320, height: 200, rx: 16, fill: '#1d2440' }),
+        lines,
+        left,
+        right
+      ),
       h('p', { class: 'gw-note' }, '왼쪽 전선을 누른 다음, 이을 번호를 누르세요')
     ),
     get: () => ({ ...value }),
@@ -508,8 +631,20 @@ export function voiceInput({ prompt, onHeard } = {}) {
   let mode = 'voice';
   let fails = 0;
   let session = null;
-  const shown = h('p', { class: 'gw-heard', lang: 'en' }, canListen ? '🎤를 누르고 영어로 말하세요' : '이 브라우저는 음성 인식이 안 돼요. 아래에 글로 쓰세요.');
-  const typed = h('input', { type: 'text', class: 'gw-type', lang: 'en', placeholder: 'Type in English', autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false' });
+  const shown = h(
+    'p',
+    { class: 'gw-heard', lang: 'en' },
+    canListen ? '🎤를 누르고 영어로 말하세요' : '이 브라우저는 음성 인식이 안 돼요. 아래에 글로 쓰세요.'
+  );
+  const typed = h('input', {
+    type: 'text',
+    class: 'gw-type',
+    lang: 'en',
+    placeholder: 'Type in English',
+    autocomplete: 'off',
+    autocapitalize: 'off',
+    spellcheck: 'false',
+  });
   const typeRow = h(
     'div',
     { class: 'gw-row', hidden: canListen },
@@ -553,7 +688,8 @@ export function voiceInput({ prompt, onHeard } = {}) {
         mic.classList.remove('recording');
         if (!text) {
           fails++;
-          if (!shown.textContent || shown.textContent.startsWith('듣는 중')) shown.textContent = '잘 안 들렸어요. 다시 눌러 말해 보세요.';
+          if (!shown.textContent || shown.textContent.startsWith('듣는 중'))
+            shown.textContent = '잘 안 들렸어요. 다시 눌러 말해 보세요.';
           if (fails >= 2) typeRow.hidden = false;
           return;
         }
