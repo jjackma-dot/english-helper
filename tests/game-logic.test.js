@@ -6,11 +6,14 @@ import {
   AVATARS,
   LEVELS,
   assignRoles,
+  chipHolder,
   decodeTeam,
   encodeTeam,
   formatCode,
   hasKeywords,
   jobsOf,
+  mazePath,
+  mazeStep,
   normalizeSpeech,
   pairOwners,
   rngFor,
@@ -19,13 +22,19 @@ import {
   voicePass,
 } from '../js/game/logic.js';
 import { buildGame, knownLetters, localJobs, objectRole } from '../js/game/plan.js';
-import { ARM_GRID, ARM_STEP, DIRS, FLOWERS, GEAR_IDS, ROOM_PAIRS, josa, ro, uniqueWiring } from '../js/game/puzzles.js';
+import { DIRS, FLOWERS, GEAR_IDS, ROOM_PAIRS, josa, ro, uniqueWiring } from '../js/game/puzzles.js';
 import {
   CONFESSION,
   QUESTIONS,
+  SECRET,
+  answerFor,
+  caseTimeline,
+  herringOf,
+  rebuttal,
+  relayTargets,
+  relayText,
   RESOLUTION,
   SUSPECTS,
-  answerOf,
   culpritOf,
   denial,
   doorLog,
@@ -99,6 +108,9 @@ test('가장 낮은 수준이 핍의 짝꿍(힌트), 가장 높은 수준이 캡
   assert.equal(r4.roles[2], 'buddy');
   assert.equal(r4.roles[1], 'captain');
   assert.deepEqual([...r4.roles].sort(), ['buddy', 'captain', 'engineer', 'navigator']);
+  // 같은 수준이 여럿이면 먼저 고른 사람이 캡틴·짝꿍
+  assert.deepEqual(assignRoles(['im3', 'im3', 'im2', 'basic']).roles, ['captain', 'navigator', 'engineer', 'buddy']);
+  assert.deepEqual(assignRoles(['im3', 'im1', 'basic', 'basic']).roles, ['captain', 'navigator', 'buddy', 'engineer']);
   const same = assignRoles(['im1', 'im1', 'im1']);
   assert.equal(same.buddy, 0);
   assert.notEqual(same.captain, same.buddy);
@@ -123,8 +135,28 @@ test('2명 이상이면 잠금을 풀려면 거의 늘 다른 사람의 단서�
 });
 
 test('방마다 맡는 임무가 돌아간다 (같은 사람이 늘 같은 짝을 맡지 않는다)', () => {
-  const owners = [0, 1, 2, 3].map((room) => pairOwners(room, 0, 4).lock);
-  assert.deepEqual(owners, [0, 1, 2, 3]);
+  for (const n of [2, 3, 4])
+    for (let p = 0; p < 4; p++) {
+      const owners = [0, 1, 2, 3].map((room) => pairOwners(room, p, n).lock);
+      assert.ok(new Set(owners).size === n, `n=${n} p=${p}: ${owners}`);
+    }
+});
+
+test('4명이면 네 방을 지나는 동안 모든 두 사람이 한 번 이상 단서를 주고받는다', () => {
+  const talked = new Set();
+  for (let room = 0; room < 4; room++) {
+    const gives = new Map();
+    for (let p = 0; p < 4; p++) {
+      const o = pairOwners(room, p, 4);
+      assert.notEqual(o.clue, o.lock);
+      talked.add([o.clue, o.lock].sort().join('-'));
+      gives.set(o.clue, (gives.get(o.clue) ?? 0) + 1);
+    }
+    // 방마다 모두 단서 하나·잠금 하나
+    assert.deepEqual([...gives.values()], [1, 1, 1, 1], `room ${room}`);
+    for (let i = 0; i < 4; i++) assert.deepEqual(jobsOf(room, i, 4).locks.length, 1);
+  }
+  assert.equal(talked.size, 6, [...talked].join(' '));
 });
 
 /* ---------- 답 맞추기 · 말하기 ---------- */
@@ -136,6 +168,11 @@ test('잠금 입력 비교', () => {
   assert.ok(sameAnswer('shape', 'heart', 'heart'));
   assert.ok(!sameAnswer('shape', 'star', 'heart'));
   assert.ok(sameAnswer('dial', 6, 6));
+  assert.ok(sameAnswer('gauge', 8, 8));
+  assert.ok(!sameAnswer('gauge', 7, 8));
+  assert.ok(sameAnswer('safe', '534', '534'));
+  assert.ok(sameAnswer('maze', 'goal', 'goal'));
+  assert.ok(!sameAnswer('maze', null, 'goal'));
   assert.ok(sameAnswer('dial', '12', 12));
   assert.ok(!sameAnswer('dial', 5, 6));
   assert.ok(sameAnswer('choice', 'mars', 'mars'));
@@ -202,8 +239,17 @@ function checkWidget(lock, where) {
       );
       break;
     case 'keypad':
+    case 'safe':
       assert.match(e, new RegExp(`^\\d{${lock.len}}$`), where);
       break;
+    case 'gauge':
+      assert.ok(Number.isInteger(e) && e >= lock.min && e <= lock.max, `${where}: ${e}`);
+      break;
+    case 'maze': {
+      assert.equal(e, 'goal', where);
+      assert.ok(mazePath(lock.maze), `${where}: 길이 없음`);
+      break;
+    }
     case 'dial':
       assert.ok(Number.isInteger(e) && e >= lock.min && e <= lock.max, `${where}: ${e}`);
       break;
@@ -372,16 +418,35 @@ test('전선 im3 문장은 바로 알려 주지 않으면서 배선 하나만 �
   assert.ok(!uniqueWiring([(m) => m.red === 1]));
 });
 
-test('로봇 팔 경로는 격자 밖으로 나가지 않는다', () => {
+test('레이저 미로: 늘 길이 있고, 곧장 가는 길은 막혀 있으며, Basic 화살표대로 가면 레이저를 피해 톱니바퀴에 닿는다', () => {
   for (let seed = 0; seed < 300; seed++) {
-    const { moves } = ROOM_PAIRS[2][0].token(rngFor(seed, 'arm'));
-    let [x, y] = ARM_GRID.start;
-    for (const m of moves) {
-      x += ARM_STEP[m][0];
-      y += ARM_STEP[m][1];
-      assert.ok(x >= 0 && x < ARM_GRID.cols && y >= 0 && y < ARM_GRID.rows, `seed ${seed}: ${moves}`);
+    const { maze, path } = ROOM_PAIRS[2][0].token(rngFor(seed, 'maze'));
+    assert.deepEqual(mazePath(maze), path, '가장 짧은 길');
+    const direct = Math.abs(maze.goal[0] - maze.start[0]) + Math.abs(maze.goal[1] - maze.start[1]);
+    assert.ok(path.length > direct, `seed ${seed}: 돌아가야 한다 (지도 없이 찍어서 못 감)`);
+    assert.ok(path.length >= 6 && path.length <= 10);
+    let pos = maze.start;
+    for (const d of path) {
+      const r = mazeStep(maze, pos, d);
+      assert.equal(r.hit, null, `seed ${seed}: ${path}`);
+      pos = r.pos;
     }
+    assert.deepEqual(pos, maze.goal);
   }
+  const m = { cols: 3, rows: 3, start: [0, 2], goal: [2, 0], walls: [[1, 2]] };
+  assert.equal(mazeStep(m, [0, 2], 'right').hit, 'wall');
+  assert.equal(mazeStep(m, [0, 2], 'left').hit, 'edge');
+  assert.equal(
+    mazePath({
+      ...m,
+      walls: [
+        [1, 2],
+        [0, 1],
+      ],
+    }),
+    null,
+    '막히면 길이 없다'
+  );
 });
 
 test('톱니바퀴 id·한국어 조사', () => {
@@ -454,9 +519,94 @@ test('증거·출입 기록·대답·고백·반박이 모든 범인에 대해 �
       '범인 방 문만 9:05·9:20에 열렸다'
     );
     for (const q of QUESTIONS)
-      for (const hard of [false, true]) checkText(answerOf(s.id, q.id, hard), `${s.id}/${q.id}`, true);
+      for (const hard of [false, true])
+        checkText(
+          answerFor(s.id, q.id, hard, { culprit: s.id, herring: SUSPECTS.find((x) => x.id !== s.id).id }),
+          `${s.id}/${q.id}`,
+          true
+        );
     assert.equal(CONFESSION[s.id].length, 2);
     checkText(RESOLUTION[s.id], 'resolution', true);
     for (const other of SUSPECTS) if (other.id !== s.id) checkText(denial(other.id, s.id), `반박 ${other.id}`, true);
   }
+});
+
+test('기억 칩: 쉬운 증거는 낮은 수준부터 한 명씩, 출입 기록은 캡틴에게', () => {
+  const lv = ['im3', 'im1', 'basic', 'basic'];
+  assert.deepEqual(
+    [0, 1, 2, 3].map((c) => chipHolder(c, lv)),
+    [2, 3, 1, 0]
+  );
+  const lv2 = ['im3', 'im3', 'im2', 'basic'];
+  assert.deepEqual(
+    [0, 1, 2, 3].map((c) => chipHolder(c, lv2)),
+    [3, 2, 1, 0]
+  );
+  assert.deepEqual(
+    [0, 1, 2, 3].map((c) => chipHolder(c, ['basic', 'im3'])),
+    [0, 0, 0, 1],
+    '2명: 쉬운 칩은 Basic, 기록은 캡틴'
+  );
+  assert.deepEqual(
+    [0, 1, 2, 3].map((c) => chipHolder(c, ['im2'])),
+    [0, 0, 0, 0]
+  );
+  // 4명이면 모두 칩을 하나씩 받는다
+  for (const levels of levelCombos(4))
+    assert.equal(new Set([0, 1, 2, 3].map((c) => chipHolder(c, levels))).size, 4, String(levels));
+});
+
+test('엉뚱한 비밀을 가진 무고한 용의자: 범인과 다르고, 9:00·9:04에만 문이 열렸고, 들이대면 비밀을 털어놓는다', () => {
+  for (let seed = 0; seed < 120; seed++) {
+    const c = culpritOf(seed);
+    const hr = herringOf(seed);
+    assert.notEqual(c, hr);
+    const log = doorLog(c, hr);
+    const times = (id) =>
+      log.filter((r) => r.door.en === SUSPECTS.find((s) => s.id === id).place.en).map((r) => r.time);
+    assert.deepEqual(times(hr).slice(1), ['9:00', '9:04']);
+    assert.deepEqual(times(c).slice(1), ['9:05', '9:20']);
+    assert.deepEqual(answerFor(hr, 'door', true, { culprit: c, herring: hr }), SECRET[hr]);
+    assert.match(answerFor(c, 'door', true, { culprit: c, herring: hr }).en, /by itself/);
+    const other = SUSPECTS.find((s) => s.id !== c && s.id !== hr).id;
+    assert.match(answerFor(other, 'door', false, { culprit: c, herring: hr }).en, /did not open/);
+    // 출입 기록 증거 카드는 두 문을 모두 말한다 (어느 쪽인지는 9:10과 비교해서 추리)
+    const card = evidenceOf(3, c, hr).card.en;
+    assert.match(card, /9:00 and 9:04/);
+    assert.match(card, /9:05 and 9:20/);
+  }
+});
+
+test('반박: 맞는 증거 두 개와 틀린 하나, 사건의 전말 시간표', () => {
+  for (const c of SUSPECTS)
+    for (const hr of SUSPECTS) {
+      if (c.id === hr.id) continue;
+      const rb = rebuttal(c.id, hr.id);
+      assert.deepEqual(
+        rb.options.map((o) => o.ok),
+        [true, true, false]
+      );
+      rb.options.forEach((o) => checkText(o.text, `반박 ${c.id}/${hr.id}`, true));
+      checkText(rb.line.easy, '반박 대사', true);
+      const tl = caseTimeline(c.id, hr.id);
+      assert.ok(tl.length >= 8);
+      tl.forEach((row) => checkText(row.text, '전말', true));
+      assert.ok(tl.some((row) => row.herring));
+    }
+});
+
+test('정전 복구: 사람마다 스위치 목표가 있고(모두 꺼짐은 아님), 수준별 설명이 있다', () => {
+  for (let n = 1; n <= 4; n++) {
+    const t = relayTargets(3, n);
+    assert.equal(t.length, n);
+    for (const x of t) assert.ok(x.length === 3 && x.some(Boolean));
+  }
+  const patterns = [];
+  for (let b = 1; b < 8; b++) patterns.push([b & 4, b & 2, b & 1].map(Boolean));
+  for (const p of patterns)
+    for (const lv of LEVELS) {
+      const t = relayText(p, lv);
+      checkText(t, `relay ${lv} ${p}`, lv !== 'im3');
+    }
+  assert.equal(relayText([true, false, true], 'im3').en, 'Turn on both ends, but leave the middle one off.');
 });

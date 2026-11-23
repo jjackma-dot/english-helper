@@ -13,17 +13,21 @@ import {
   SPEECH_PASS,
   STORM_MS,
   avatarOf,
+  chipHolder,
   clockText,
   decodeTeam,
   formatCode,
   hasKeywords,
   levelRank,
+  rngFor,
   sameAnswer,
   speechScore,
   voicePass,
 } from './logic.js';
 import { buildGame, knownLetters, objectRole } from './plan.js';
 import {
+  BLACKOUT,
+  BLACKOUT_DONE,
   CONFESSION,
   ENDING,
   FINALE_INTRO,
@@ -38,19 +42,26 @@ import {
   SPEAKERS,
   SUSPECTS,
   TRAIT,
-  answerOf,
+  answerFor,
+  caseTimeline,
+  chipGiven,
   denial,
   doorLog,
   evidenceOf,
+  herringOf,
+  rebuttal,
+  relayTargets,
+  relayText,
   suspectOf,
 } from './story.js';
-import { sparkyBarks } from './puzzles.js';
+import { josa, sparkyBarks } from './puzzles.js';
 import { ROOM_ART, closeup, defs, finale as finaleArt, portrait, suspectIcon } from './art.js';
 import { createScene } from './scene.js';
 import { createWidget, voiceInput } from './widgets.js';
 import { playMelody, setSound, sfx } from './sfx.js';
 import { canListen, hush, listenOnce, say } from './voice.js';
 import { askPip, askSuspect } from './ai.js';
+import { GAME_INFO, startMinigame } from './minigames.js';
 
 const ROOM_COUNT = 4;
 const CRYSTALS_TOTAL = 12;
@@ -65,6 +76,9 @@ export function newSave(code, local) {
     room: 0,
     solved: {},
     clues: {},
+    unlocked: {}, // 미니게임으로 연 단서
+    pipRead: {}, // 혼자 할 때 핍이 읽어 준 로봇 글자
+    relayDone: false,
     open: {},
     crystals: {},
     hints: {},
@@ -86,6 +100,9 @@ export function newSave(code, local) {
  */
 export function openGame(host, save, { onExit, onNewMission }) {
   const game = buildGame(decodeTeam(save.code));
+  const herring = herringOf(game.seed);
+  for (const k of ['unlocked', 'pipRead', 'interviewed', 'tries', 'hints']) save[k] ??= {};
+  save.accused ??= [];
   let prefs = getGamePrefs();
   setSound(prefs.sound);
   const P = (i) => game.players[i];
@@ -554,7 +571,10 @@ export function openGame(host, save, { onExit, onNewMission }) {
     const t =
       side === 'clue'
         ? { en: `${objName.en}: What do you see?`, ko: `${objName.ko}: 무엇이 보여?` }
-        : { en: `I can help you with the ${objName.en.toLowerCase()}!`, ko: `${objName.ko}을(를) 도와줄게!` };
+        : {
+            en: `I can help you with the ${objName.en.toLowerCase()}!`,
+            ko: `${josa(objName.ko, '을', '를')} 도와줄게!`,
+          };
     panel(
       `${objName.icon} ${objName.en}`,
       [
@@ -572,11 +592,45 @@ export function openGame(host, save, { onExit, onNewMission }) {
 
   /* ---------- 단서 ---------- */
 
-  function openClue(pair) {
+  /** 한 폰에 여럿이면: 그 사람만 보게 가림막을 먼저 띄운다 */
+  function curtain(owner, then, what = '비밀 단서') {
+    if (local().length < 2) return then();
+    const a = avatarOf(P(owner).avatar);
+    panel(
+      `${a.emoji} ${a.name} 차례`,
+      [
+        h(
+          'div',
+          { class: 'gm-curtain' },
+          h('span', { class: 'gm-emoji huge' }, a.emoji),
+          h('p', { class: 'gm-lead' }, `${a.name}만 보세요! 다른 사람은 눈을 가려요 🙈`),
+          h('p', { class: 'gm-ko' }, `${what}예요. 본 다음 영어로 알려 주세요.`)
+        ),
+        h('button', { type: 'button', class: 'btn primary big', onclick: then }, `${a.name}예요, 보여 주세요`),
+      ],
+      { sub: what, cls: 'gm-curtainpanel' }
+    );
+  }
+
+  /** 혼자 할 때 짝수 번째 단서는 로봇 글자로 적혀 있어 핍에게 영어로 부탁해야 읽을 수 있다 (AI 파트너) */
+  const soloPip = (pair) => game.n === 1 && pair.p % 2 === 1;
+  const HOLD_LABEL = { armscreen: '꾹 눌러 화면 켜기', tablet: '꾹 눌러 조명 충전', sparky: '꾹 눌러 스파키 쓰다듬기' };
+
+  /** 미니게임 밑에 깔릴 단서 그림 (그림이 없으면 쪽지) */
+  function revealContent(pair) {
+    const art = closeup(pair.clue.art);
+    if (art) return h('div', { class: `gm-art gm-art-${pair.clue.art.type}` }, art);
+    return h('div', { class: 'gm-paper', lang: 'en' }, pair.clue.text.en);
+  }
+
+  function openClue(pair, { trusted = false, fresh = false, pipReads = false } = {}) {
+    if (!trusted && local().length > 1) return curtain(pair.clueOwner, () => openClue(pair, { trusted: true }));
+    if (!roomSet('unlocked').includes(pair.p)) return openClueGame(pair);
+    if (soloPip(pair) && !roomSet('pipRead').includes(pair.p)) return openRobotText(pair);
     const r = save.room;
     const v = pair.clue;
     const lv = pair.clueLv;
-    const speaker = v.art?.type === 'captain' || v.art?.type === 'radio' ? 'luna' : 'narrator';
+    const speaker = pipReads ? 'pip' : v.art?.type === 'captain' || v.art?.type === 'radio' ? 'luna' : 'narrator';
     if (!roomSet('clues').includes(pair.p)) {
       roomSet('clues').push(pair.p);
       persist();
@@ -584,7 +638,7 @@ export function openGame(host, save, { onExit, onNewMission }) {
     }
     const body = [h('div', { class: 'gm-owner' }, who(pair.clueOwner), h('span', { class: 'gm-tag' }, '📢 단서'))];
     const art = closeup(v.art);
-    if (art) body.push(h('div', { class: `gm-art gm-art-${v.art.type}` }, art));
+    if (art) body.push(h('div', { class: `gm-art gm-art-${v.art.type}${fresh ? ' fresh' : ''}` }, art));
     // 들어야 하는 단서: 'after'는 한 번 들은 뒤 글이 보이고, 'hidden'은 글 보기 버튼을 눌러야 보인다 (듣기 연습)
     const textBox = bilingual(v.text, lv, { speaker });
     const reveal = h(
@@ -598,26 +652,25 @@ export function openGame(host, save, { onExit, onNewMission }) {
       reveal.hidden = v.listen === 'after';
     } else reveal.hidden = true;
     const playLabel = v.art?.type === 'captain' ? '영상 재생' : '메시지 듣기';
+    let playBtn = null;
     if (v.listen) {
-      body.push(
-        h(
-          'button',
-          {
-            type: 'button',
-            class: 'btn primary gm-play',
-            onclick: async () => {
-              art?.classList?.add('playing');
-              await say(v.text.en, speaker, { slow: lv === 'basic' || lv === 'im1' });
-              art?.classList?.remove('playing');
-              if (v.listen === 'after') {
-                reveal.hidden = false;
-              }
-            },
+      playBtn = h(
+        'button',
+        {
+          type: 'button',
+          class: 'btn primary gm-play',
+          onclick: async () => {
+            sfx.radio();
+            art?.classList?.add('playing');
+            await say(v.text.en, speaker, { slow: lv === 'basic' || lv === 'im1' });
+            art?.classList?.remove('playing');
+            if (v.listen === 'after') reveal.hidden = false;
           },
-          icon('play', { size: 18 }),
-          playLabel
-        )
+        },
+        icon('play', { size: 18 }),
+        playLabel
       );
+      body.push(playBtn);
     }
     if (v.tones)
       body.push(
@@ -654,6 +707,81 @@ export function openGame(host, save, { onExit, onNewMission }) {
       )
     );
     panel(`${pair.def.clue.icon} ${pair.def.clue.en}`, body, { sub: `${pair.def.clue.ko} · ${ROOMS[r].title.ko}` });
+    // 주파수를 맞추자마자 무전이 들려온다 / 핍이 로봇 글자를 읽어 준다
+    if (fresh && playBtn) setTimeout(() => playBtn.isConnected !== false && playBtn.click(), 350);
+    else if (pipReads) say(v.text.en, 'pip', { slow: levelRank(lv) <= 1 });
+  }
+
+  /** 단서를 처음 열 때: 손으로 하는 미니게임 (먼지 닦기·주파수 맞추기·손전등·조각 돌리기·꾹 누르기) */
+  function openClueGame(pair) {
+    const kind = pair.def.clue.game || 'hold';
+    const info = GAME_INFO[kind];
+    const stageEl = h('div', { class: `mg-stage mg-${kind}` });
+    panel(
+      `${pair.def.clue.icon} ${pair.def.clue.en}`,
+      [
+        h('div', { class: 'gm-owner' }, who(pair.clueOwner), h('span', { class: 'gm-tag' }, '🔎 단서 찾기')),
+        h('p', { class: 'mg-howto' }, `${info.ico} ${info.ko}`, h('small', { lang: 'en' }, ` ${info.en}`)),
+        stageEl,
+      ],
+      { sub: `${pair.def.clue.ko} · ${ROOMS[save.room].title.ko}`, cls: 'gm-gamepanel' }
+    );
+    const room = save.room;
+    requestAnimationFrame(() =>
+      startMinigame(kind, stageEl, {
+        content: revealContent(pair),
+        level: pair.clueLv,
+        rng: rngFor(game.seed, `mg${room}:${pair.p}`),
+        label: HOLD_LABEL[pair.def.clue.obj] || '꾹 누르기',
+        onDone: () => {
+          if (save.room !== room) return;
+          if (!roomSet('unlocked').includes(pair.p)) roomSet('unlocked').push(pair.p);
+          persist();
+          updateMarks();
+          setTimeout(() => openClue(pair, { trusted: true, fresh: true }), 450);
+        },
+      })
+    );
+  }
+
+  const GLYPHS = '◐◑◒◓▲▼◆◇○●□■△▽☆★♢♤♧♡◈◎⬟⬢⬡✦';
+  const robotGlyphs = (text) =>
+    text
+      .slice(0, 90)
+      .split('')
+      .map((ch) => (/[a-z]/i.test(ch) ? GLYPHS[(ch.toLowerCase().charCodeAt(0) - 97) % GLYPHS.length] : ch))
+      .join('');
+
+  function openRobotText(pair) {
+    const lv = pair.clueLv;
+    const q =
+      levelRank(lv) <= 1
+        ? { en: 'Pip, can you read this?', ko: '핍, 이거 읽어 줄래?' }
+        : { en: 'Pip, what does this say? Can you read it for me?', ko: '핍, 이게 무슨 뜻이야? 나 대신 읽어 줄래?' };
+    panel(
+      `${pair.def.clue.icon} ${pair.def.clue.en}`,
+      [
+        h('div', { class: 'gm-owner' }, who(pair.clueOwner), h('span', { class: 'gm-tag' }, '🤖 로봇 글자')),
+        h('p', { class: 'gm-lead' }, '로봇 글자로 적혀 있어요! 핍은 로봇 글자를 읽을 수 있어요.'),
+        h('p', { class: 'gm-robotext', 'aria-hidden': 'true' }, robotGlyphs(pair.clue.text.en)),
+        phraseBox('핍에게 영어로 부탁해요', q, lv, { speaker: 'pip' }),
+        h(
+          'button',
+          {
+            type: 'button',
+            class: 'btn primary big',
+            onclick: () => {
+              if (!roomSet('pipRead').includes(pair.p)) roomSet('pipRead').push(pair.p);
+              persist();
+              sfx.radio();
+              openClue(pair, { trusted: true, pipReads: true });
+            },
+          },
+          '🤖 핍에게 부탁하기'
+        ),
+      ],
+      { sub: '혼자 할 때는 핍이 팀원이에요' }
+    );
   }
 
   /** 스파키를 누르면 짖는다 (소리 + 말풍선이 하나씩) */
@@ -727,6 +855,12 @@ export function openGame(host, save, { onExit, onNewMission }) {
     const tries = () => ((save.tries[`${r}:${pair.p}`] ??= 0), save.tries[`${r}:${pair.p}`]);
     const fail = (text = 'Not quite! Try again.') => {
       save.tries[`${r}:${pair.p}`] = tries() + 1;
+      // 틀리면 태양 폭풍이 조금 다가온다 (실패로 끝나지는 않는다)
+      if (prefs.timer && save.stage === 'play') {
+        save.playMs += 20000;
+        updateHud();
+        toast('⚡ 앗! 태양 폭풍이 20초 더 가까워졌어요.', { ms: 2200 });
+      }
       persist();
       sfx.bad();
       el.classList.remove('shake');
@@ -759,7 +893,17 @@ export function openGame(host, save, { onExit, onNewMission }) {
       area.append(v.el);
       return;
     }
-    const w = createWidget(lock);
+    // 게이지(누르고 떼기)·레이저 미로는 손을 떼거나 별에 닿으면 바로 확인한다
+    const autoCheck = () => {
+      if (!w.ready()) return;
+      if (!sameAnswer(lock.widget, w.get(), lock.expected)) {
+        fail(lock.widget === 'gauge' ? `You let go at ${w.get()}. Try again!` : undefined);
+        w.reset();
+        return;
+      }
+      win();
+    };
+    const w = createWidget(lock, { level: lv, onDone: () => setTimeout(autoCheck, 120) });
     area.append(w.el);
     const check = h(
       'button',
@@ -780,7 +924,7 @@ export function openGame(host, save, { onExit, onNewMission }) {
       icon('check', { size: 20 }),
       '확인'
     );
-    area.append(check);
+    if (!['gauge', 'maze'].includes(lock.widget)) area.append(check);
 
     /** 모양을 맞힌 뒤 핍에게 말하기 (IM1~IM3 충전기) */
     function voiceStep() {
@@ -983,7 +1127,9 @@ export function openGame(host, save, { onExit, onNewMission }) {
   async function roomOutro() {
     const r = save.room;
     clear(bottom);
-    const ev = evidenceOf(r, game.culprit);
+    const ev = evidenceOf(r, game.culprit, herring);
+    const holder = chipHolder(r, game.levels);
+    const mine = local().includes(holder) || game.n === 1;
     if (r < ROOM_COUNT - 1) {
       scene.render(ROOM_ART[r + 1]({ lit: 1, solved: [], letters: ['', '', '', ''] }), { found: [] });
       scene.setDark(false);
@@ -992,7 +1138,9 @@ export function openGame(host, save, { onExit, onNewMission }) {
       showFinaleScene();
       scene.enter();
     }
-    await talk(ev.lines);
+    await talk(
+      mine ? ev.lines : chipGiven(r, `${avatarOf(P(holder).avatar).emoji} ${avatarOf(P(holder).avatar).name}`)
+    );
     await evidenceCard(r);
     save.room = r + 1;
     save.stage = r + 1 < ROOM_COUNT ? 'intro' : 'finale-intro';
@@ -1002,12 +1150,19 @@ export function openGame(host, save, { onExit, onNewMission }) {
 
   function evidenceCard(r) {
     return new Promise((resolve) => {
-      const ev = evidenceOf(r, game.culprit);
+      const holder = chipHolder(r, game.levels);
+      const mine = local().includes(holder) || game.n === 1;
+      const ev = evidenceOf(r, game.culprit, herring);
       panel(
         `🧩 Memory chip ${r + 1}`,
         [
-          h('div', { class: 'gm-evcard' }, evidenceIcon(r), bilingual(ev.card, devLv(), { big: true })),
-          r === 3 ? doorLogView() : null,
+          mine
+            ? h('div', { class: 'gm-evcard' }, evidenceIcon(r), bilingual(ev.card, devLv(), { big: true }))
+            : chipView(r),
+          mine && game.n > 1
+            ? h('p', { class: 'gm-lead' }, '이 칩은 이 폰에만 보여요. 다른 사람이 물어보면 영어로 알려 주세요!')
+            : null,
+          r === 3 && mine ? doorLogView() : null,
           h(
             'p',
             { class: 'gm-ko' },
@@ -1034,7 +1189,7 @@ export function openGame(host, save, { onExit, onNewMission }) {
   }
 
   function doorLogView() {
-    const rows = doorLog(game.culprit);
+    const rows = doorLog(game.culprit, herring);
     const easy = tier() === 'easy';
     return h(
       'table',
@@ -1046,7 +1201,7 @@ export function openGame(host, save, { onExit, onNewMission }) {
         rows.map((row) =>
           h(
             'tr',
-            { class: row.time === '9:05' || row.time === '9:20' ? 'hl' : '' },
+            { class: ['9:00', '9:04', '9:05', '9:20'].includes(row.time) ? 'hl' : '' },
             h('td', null, row.time),
             h('td', { lang: 'en' }, row.door.en, easy ? h('small', null, ` ${row.door.ko}`) : null),
             h('td', { lang: 'en' }, row.what.en, easy ? h('small', null, ` ${row.what.ko}`) : null)
@@ -1080,55 +1235,6 @@ export function openGame(host, save, { onExit, onNewMission }) {
     );
     wrap.append(...chips);
     return wrap;
-  }
-
-  /** 질문 카드를 소리 내어 읽게 한다 (읽으면 칭찬, 바로 묻기도 된다). 다 끝나면 resolve */
-  function readAloud(box, text, lv) {
-    return new Promise((resolve) => {
-      if (!canListen) return resolve(false);
-      const out = h('p', { class: 'gm-heard' }, '🎤를 누르고 질문을 영어로 읽어요');
-      const mic = h(
-        'button',
-        {
-          type: 'button',
-          class: 'gw-mic small',
-          'aria-label': '읽기',
-          onclick: async () => {
-            mic.classList.add('recording');
-            out.textContent = '듣는 중…';
-            try {
-              const heard = await listenOnce({ onInterim: (t) => (out.textContent = t) }).promise;
-              if (speechScore(heard, text) >= (SPEECH_PASS[lv] ?? 0.6)) {
-                save.said++;
-                persist();
-                sfx.ok();
-                ui.remove();
-                resolve(true);
-                return;
-              }
-              out.textContent = heard ? `“${heard}” — 한 번 더 읽어 볼까요?` : '잘 안 들렸어요. 다시 눌러요.';
-            } catch (e) {
-              out.textContent = e.message;
-            }
-            mic.classList.remove('recording');
-          },
-        },
-        icon('mic', { size: 26 })
-      );
-      const ui = h(
-        'div',
-        { class: 'gm-readaloud' },
-        h('p', { class: 'gm-en big', lang: 'en' }, text),
-        h(
-          'div',
-          { class: 'gm-row' },
-          mic,
-          h('button', { type: 'button', class: 'gm-chip', onclick: () => (ui.remove(), resolve(false)) }, '그냥 묻기')
-        ),
-        out
-      );
-      box.append(ui);
-    });
   }
 
   function chat({ title, sub, speaker, cards, onAsk, aiAsk, headNode }) {
@@ -1167,17 +1273,7 @@ export function openGame(host, save, { onExit, onNewMission }) {
             {
               type: 'button',
               class: 'gm-qcard',
-              onclick: async () => {
-                cardBox.hidden = true;
-                await readAloud(readBox, q.en, lv);
-                cardBox.hidden = false;
-                bubble('me', q, lv);
-                history.push({ from: 'me', text: q.en });
-                const a = await onAsk(c, hard);
-                bubble('them', a, lv);
-                history.push({ from: 'them', text: a.en });
-                say(a.en, speaker, { slow: !hard });
-              },
+              onclick: () => askCard(c),
             },
             h('span', { lang: 'en' }, q.en),
             lv === 'basic' || showKo ? h('small', null, q.ko) : null
@@ -1185,7 +1281,18 @@ export function openGame(host, save, { onExit, onNewMission }) {
         );
       }
     };
-    const readBox = h('div');
+    // 카드 묻기를 함수로 (🎤로 말한 문장이 카드와 비슷하면 그 카드로 묻는다)
+    const askCard = async (c, spoken) => {
+      const lv = lvOf(asker);
+      const hard = levelRank(lv) >= 2;
+      const q = hard ? c.qh : c.q;
+      bubble('me', spoken ? { en: spoken } : q, lv);
+      history.push({ from: 'me', text: q.en });
+      const a = await onAsk(c, hard);
+      bubble('them', a, lv);
+      history.push({ from: 'them', text: a.en });
+      say(a.en, speaker, { slow: !hard });
+    };
     let aiBox = null;
     if (aiAsk && geminiEnabled()) {
       const input = h('input', {
@@ -1259,6 +1366,38 @@ export function openGame(host, save, { onExit, onNewMission }) {
         if (e.key === 'Enter') send(input.value);
       });
     }
+    if (!aiBox && canListen) {
+      const heardEl = h('span', { class: 'gm-practice-out' });
+      const mic = h(
+        'button',
+        {
+          type: 'button',
+          class: 'gm-chip',
+          onclick: async () => {
+            mic.classList.add('recording');
+            heardEl.textContent = '듣는 중…';
+            try {
+              const heard = await listenOnce({ onInterim: (t) => (heardEl.textContent = t) }).promise;
+              const best = cards
+                .map((c) => ({ c, score: Math.max(speechScore(heard, c.q.en), speechScore(heard, c.qh.en)) }))
+                .sort((a, b) => b.score - a.score)[0];
+              if (heard && best.score >= 0.45) {
+                heardEl.textContent = '';
+                save.said++;
+                persist();
+                await askCard(best.c, heard);
+              } else heardEl.textContent = heard ? `“${heard}” — 카드 중 하나처럼 물어봐요!` : '잘 안 들렸어요.';
+            } catch (e) {
+              heardEl.textContent = e.message;
+            }
+            mic.classList.remove('recording');
+          },
+        },
+        icon('mic', { size: 16 }),
+        '말로 묻기'
+      );
+      aiBox = h('div', { class: 'gm-practice' }, mic, heardEl);
+    }
     drawCards();
     panel(
       title,
@@ -1266,8 +1405,7 @@ export function openGame(host, save, { onExit, onNewMission }) {
         headNode,
         askerChips(drawCards),
         log,
-        readBox,
-        h('p', { class: 'gm-ko' }, '질문 카드를 누르고 소리 내어 읽어 보세요.'),
+        h('p', { class: 'gm-ko' }, '질문 카드를 누르면 바로 물어봐요.'),
         cardBox,
         aiBox,
       ],
@@ -1656,23 +1794,46 @@ export function openGame(host, save, { onExit, onNewMission }) {
     scene.marks({});
   }
 
+  /** 증거 칩 하나: 이 폰에 칩을 받은 사람이 있으면 내용, 없으면 누구에게 물어볼지 */
+  function chipView(r) {
+    const holder = chipHolder(r, game.levels);
+    if (local().includes(holder) || game.n === 1) {
+      const ev = evidenceOf(r, game.culprit, herring);
+      return h('div', { class: 'gm-evcard' }, evidenceIcon(r), bilingual(ev.card, devLv()));
+    }
+    const a = avatarOf(P(holder).avatar);
+    return h(
+      'div',
+      { class: 'gm-evcard locked' },
+      h('div', { class: 'gm-evico' }, '🔒'),
+      h(
+        'div',
+        { class: 'gm-bi' },
+        h('b', null, `기억 칩 ${r + 1}번은 ${a.emoji} ${a.name}에게 있어요`),
+        phraseBox(
+          `${a.name}에게 영어로 물어보세요`,
+          { en: 'What did your memory chip show?', ko: '네 기억 칩에 뭐가 보였어?' },
+          devLv()
+        )
+      )
+    );
+  }
+
   function openEvidence() {
     const have = Math.min(save.room, ROOM_COUNT);
     const cards = [];
-    for (let r = 0; r < have; r++) {
-      const ev = evidenceOf(r, game.culprit);
-      cards.push(h('div', { class: 'gm-evcard' }, evidenceIcon(r), bilingual(ev.card, devLv())));
-    }
+    for (let r = 0; r < have; r++) cards.push(chipView(r));
+    const logHere = have >= 4 && (local().includes(chipHolder(3, game.levels)) || game.n === 1);
     panel(
       '🗂 Evidence',
       [
         cards.length
           ? cards
           : h('p', { class: 'gm-lead' }, '아직 증거가 없어요. 방을 탈출할 때마다 핍의 기억 칩에서 하나씩 나와요.'),
-        have >= 4 ? doorLogView() : null,
+        logHere ? doorLogView() : null,
         have >= 4 ? suspectTable() : null,
       ],
-      { sub: '핍의 기억 칩' }
+      { sub: '핍의 기억 칩 · 칩마다 받은 사람이 달라요' }
     );
   }
 
@@ -1705,7 +1866,11 @@ export function openGame(host, save, { onExit, onNewMission }) {
     panel(
       '🕵️ Suspects',
       [
-        h('p', { class: 'gm-lead' }, '누구에게 물어볼까요? 한 명은 거짓말을 하고 있어요.'),
+        h(
+          'p',
+          { class: 'gm-lead' },
+          '누구에게 물어볼까요? 거짓말을 하는 사람이 있어요. 하지만 거짓말쟁이가 꼭 범인은 아니에요!'
+        ),
         h(
           'div',
           { class: 'gm-pickgrid' },
@@ -1736,71 +1901,133 @@ export function openGame(host, save, { onExit, onNewMission }) {
         'div',
         { class: 'gm-sushead' },
         portrait(id),
-        h('p', { class: 'gm-ko' }, '질문을 골라 영어로 물어보세요. 한 사람은 거짓말을 하고 있어요!')
+        h(
+          'p',
+          { class: 'gm-ko' },
+          '질문을 골라 영어로 물어보세요. 출입 기록을 들이대면(Your door opened…) 숨긴 이야기가 나올 수도 있어요!'
+        )
       ),
       onAsk: async (c, hard) => {
         if (!asked.includes(c.id)) asked.push(c.id);
         persist();
-        return answerOf(id, c.id, hard);
+        return answerFor(id, c.id, hard, { culprit: game.culprit, herring });
       },
       aiAsk: (q, lv, history) => askSuspect({ suspect: id, culprit: game.culprit, level: lv, question: q, history }),
     });
   }
 
+  /** 비밀 투표: 한 사람씩 몰래 고르고, 다 같이 "3, 2, 1!" 하고 화면을 동시에 보여 준다 */
   function openAccuse() {
-    const pick = (id) => {
-      const s = suspectOf(id);
+    const voters = local();
+    const votes = {};
+    let i = 0;
+    const pickFor = (v) => {
+      const a = avatarOf(P(v).avatar);
       panel(
-        '👉 Accuse',
+        '🗳 Secret vote',
         [
+          h('p', { class: 'gm-lead' }, `${a.emoji} ${a.name}, 누가 별의 심장을 가져갔을까요? 몰래 골라요!`),
           h(
             'div',
-            { class: 'gm-sushead' },
-            portrait(id),
-            h('p', { class: 'gm-en big', lang: 'en' }, `Is it ${s.name}?`)
+            { class: 'gm-pickgrid' },
+            SUSPECTS.map((s) =>
+              h(
+                'button',
+                {
+                  type: 'button',
+                  class: 'gm-pick',
+                  onclick: () => {
+                    votes[v] = s.id;
+                    sfx.tap();
+                    i++;
+                    next();
+                  },
+                },
+                suspectIcon(s.id),
+                h('b', null, s.name),
+                h('small', null, s.ko)
+              )
+            )
           ),
-          phraseBox(
-            '모두 함께 영어로 말해요',
-            { en: `${s.name}, we think you took the Star Core!`, ko: `${s.ko}, 네가 별의 심장을 가져간 것 같아!` },
-            devLv()
-          ),
-          h(
-            'div',
-            { class: 'gm-row' },
-            h('button', { type: 'button', class: 'btn primary big', onclick: () => accuse(id) }, '네, 지목해요!'),
-            h('button', { type: 'button', class: 'btn ghost', onclick: () => openAccuse() }, '다시 고를래요')
-          ),
+          h('button', { type: 'button', class: 'btn ghost', onclick: () => openEvidence() }, '🗂 증거 다시 보기'),
         ],
-        { sub: '범인 지목' }
+        { sub: '비밀 투표' }
       );
     };
-    panel(
-      '👉 Who took the Star Core?',
-      [
-        bilingual(
-          {
-            en: 'Who took the Star Core? Choose carefully!',
-            ko: '누가 별의 심장을 가져갔을까요? 증거를 보고 신중하게 골라요!',
-          },
-          devLv()
-        ),
-        h(
-          'div',
-          { class: 'gm-pickgrid' },
-          SUSPECTS.map((s) =>
-            h(
-              'button',
-              { type: 'button', class: 'gm-pick', onclick: () => pick(s.id) },
-              suspectIcon(s.id),
-              h('b', null, s.name),
-              h('small', null, s.ko)
-            )
+    const next = () => {
+      if (i < voters.length) return curtain(voters[i], () => pickFor(voters[i]), '비밀 투표');
+      reveal();
+    };
+    const reveal = () => {
+      // 혼자 하는 게임은 숨길 사람이 없으니 카운트다운 없이 바로 보여 준다
+      const solo = game.n === 1;
+      const board = h('div', { class: 'gm-votes', hidden: !solo });
+      const chosen = [...new Set(Object.values(votes))];
+      const rows = [
+        ...voters.map((v) =>
+          h(
+            'div',
+            { class: 'gm-vote' },
+            h('span', { class: 'gm-emoji big' }, avatarOf(P(v).avatar).emoji),
+            h('span', null, '→'),
+            suspectIcon(votes[v]),
+            h('b', null, suspectOf(votes[v]).name)
           )
         ),
-        h('button', { type: 'button', class: 'btn ghost', onclick: () => openEvidence() }, '🗂 증거 다시 보기'),
-      ],
-      { sub: '범인 지목' }
-    );
+        voters.length < game.n
+          ? h('p', { class: 'gm-ko' }, '다른 폰의 투표와도 맞춰 보세요. 모두 같은 사람을 골랐나요?')
+          : null,
+        chosen.length > 1 ? h('p', { class: 'gm-lead' }, '의견이 갈렸어요! 이유를 영어로 말해 보고 정해요.') : null,
+        ...chosen.map((id) =>
+          h(
+            'button',
+            { type: 'button', class: 'btn primary big', onclick: () => accuse(id) },
+            `👉 ${suspectOf(id).name} 지목하기`
+          )
+        ),
+        h('button', { type: 'button', class: 'btn ghost', onclick: () => closePanel() }, '조금 더 조사할래요'),
+      ];
+      board.append(...rows.filter(Boolean));
+      const count = solo
+        ? null
+        : h(
+            'button',
+            {
+              type: 'button',
+              class: 'btn primary big gm-countdown',
+              onclick: async () => {
+                count.disabled = true;
+                for (const n of ['3', '2', '1']) {
+                  count.textContent = n;
+                  sfx.beep();
+                  await new Promise((res) => setTimeout(res, 650));
+                }
+                sfx.win();
+                count.remove();
+                board.hidden = false;
+              },
+            },
+            '3 · 2 · 1 공개!'
+          );
+      panel(
+        '🗳 Secret vote',
+        [
+          h(
+            'p',
+            { class: 'gm-lead' },
+            solo
+              ? '이 사람이 범인일까요? 지목하면 그 사람이 대답해요. 틀려도 다시 조사할 수 있어요!'
+              : '모두 골랐으면 다 같이 "3, 2, 1!"을 외치고 화면을 동시에 보여 주세요!'
+          ),
+          count,
+          board,
+        ],
+        {
+          sub: solo ? '범인 지목' : '비밀 투표 공개',
+        }
+      );
+    };
+    next();
   }
 
   async function accuse(id) {
@@ -1829,59 +2056,42 @@ export function openGame(host, save, { onExit, onNewMission }) {
     }
     moods[id] = 'nervous';
     showFinaleScene();
-    await proveIt(id);
+    scene.focus(id);
+    await rebuttalStep(id);
   }
 
-  /** 맞게 지목하면 "왜 나야?" → 증거 두 개를 골라 영어로 말한다 */
-  function proveIt(id) {
+  /** 범인의 마지막 반박: 다른 사람(붉은 청어)에게 뒤집어씌우려 한다 → 반박할 증거를 골라 영어로 말한다 */
+  async function rebuttalStep(id) {
+    const rb = rebuttal(id, herring);
+    await talk([rb.line], { moods: { [id]: 'nervous' } });
     return new Promise((resolve) => {
-      const s = suspectOf(id);
       const lv = devLv();
-      const keys = ['size', 'color', 'kind', 'log'];
-      const sentence = {
-        size: {
-          en: `The shadow was ${s.size}, and ${s.name} is ${s.size}.`,
-          ko: `그림자가 ${s.size === 'big' ? '컸고' : '작았고'}, ${s.ko}도 ${s.size === 'big' ? '커요' : '작아요'}.`,
-        },
-        color: {
-          en: `There was ${s.color} on the leaf, and ${s.name} is ${s.color}.`,
-          ko: `잎에 ${TRAIT[s.color].ko} 자국이 있었고, ${s.ko}는 ${TRAIT[s.color].ko}이에요.`,
-        },
-        kind:
-          s.kind === 'robot'
-            ? { en: `There were oil drops, and ${s.name} is a robot.`, ko: `기름 방울이 있었고, ${s.ko}는 로봇이에요.` }
-            : {
-                en: `There were cookie crumbs, and ${s.name} eats cookies.`,
-                ko: `쿠키 부스러기가 있었고, ${s.ko}는 쿠키를 먹어요.`,
-              },
-        log: {
-          en: `The ${s.place.en} door opened at 9:05, so ${s.name} left the room.`,
-          ko: `${s.place.ko} 문이 9시 5분에 열렸으니, ${s.ko}가 방을 나간 거예요.`,
-        },
-      };
-      const label = { size: '그림자 크기', color: '잎의 색', kind: '바닥의 흔적', log: '출입 기록' };
-      const chosen = [];
       const out = h('div', { class: 'gm-proof' });
-      const chips = keys.map((k) =>
+      const order = [...rb.options].sort((a, b) => rngFor(game.seed, a.id)() - rngFor(game.seed, b.id)());
+      const opts = order.map((o) =>
         h(
           'button',
           {
             type: 'button',
-            class: 'gm-chip',
-            'aria-pressed': 'false',
-            onclick: (e) => {
-              const i = chosen.indexOf(k);
-              if (i >= 0) chosen.splice(i, 1);
-              else chosen.push(k);
-              if (chosen.length > 2) chosen.shift();
-              for (const c of chips) c.setAttribute('aria-pressed', String(chosen.includes(c.dataset.k)));
-              e.currentTarget.blur?.();
-              clear(out).append(...chosen.map((x) => phraseBox('이렇게 말해요', sentence[x], lv)));
-              go.disabled = chosen.length < 2;
+            class: 'gm-qcard',
+            onclick: () => {
+              if (!o.ok) {
+                sfx.bad();
+                clear(out).append(
+                  bilingual({ en: 'Ha! That proves nothing!', ko: '하! 그건 아무것도 증명하지 못해!' }, lv, {
+                    speaker: id,
+                  })
+                );
+                say('Ha! That proves nothing!', id);
+                return;
+              }
+              sfx.ok();
+              clear(out).append(phraseBox('이렇게 말해요', o.text, lv), go);
+              go.hidden = false;
             },
-            dataset: { k },
           },
-          label[k]
+          h('span', { lang: 'en' }, o.text.en),
+          lv === 'basic' ? h('small', null, o.text.ko) : null
         )
       );
       const go = h(
@@ -1889,7 +2099,7 @@ export function openGame(host, save, { onExit, onNewMission }) {
         {
           type: 'button',
           class: 'btn primary big',
-          disabled: true,
+          hidden: true,
           onclick: async () => {
             closePanel();
             moods[id] = 'sad';
@@ -1901,28 +2111,148 @@ export function openGame(host, save, { onExit, onNewMission }) {
             resolve();
           },
         },
-        '증거를 보여 줘요!'
+        '증거를 들이대요!'
       );
       panel(
-        `🤔 ${s.name}: “Why me?”`,
+        `🤔 ${suspectOf(id).name}: “Not me!”`,
+        [
+          h('div', { class: 'gm-sushead' }, portrait(id, 'nervous'), bilingual(rb.line[tier()], lv, { speaker: id })),
+          h('p', { class: 'gm-lead' }, '어떤 증거로 반박할까요? (맞는 증거는 두 가지예요)'),
+          h('div', { class: 'gm-cards' }, opts),
+          out,
+        ],
+        { sub: '마지막 반박' }
+      );
+    });
+  }
+
+  /** 정전 복구: 내 스위치판의 설명은 다른 사람 폰에 있다. 서로 영어로 알려 줘야 불이 켜진다 */
+  function blackoutRelay() {
+    return new Promise((resolve) => {
+      const targets = relayTargets(game.seed, game.n);
+      const state = targets.map(() => [false, false, false]);
+      const reader = (o) => (o + game.n - 1) % game.n; // 내 판의 설명을 가진 사람
+      const easy = levelRank(devLv()) <= 1;
+      let left = easy ? 90 : 60;
+      scene.setDark(true, 70);
+      sfx.alarm();
+      const clockEl = h('b', { class: 'gm-relay-time' });
+      const panels = local().map((o) => {
+        const a = avatarOf(P(o).avatar);
+        const ok = h('span', { class: 'gm-relay-ok' }, '');
+        const sw = [0, 1, 2].map((k) =>
+          h(
+            'button',
+            {
+              type: 'button',
+              class: 'gw-switch down relay',
+              'data-owner': String(o),
+              'data-k': String(k),
+              onclick: (e) => {
+                state[o][k] = !state[o][k];
+                e.currentTarget.className = `gw-switch ${state[o][k] ? 'up' : 'down'} relay`;
+                e.currentTarget.querySelector('.gw-label').textContent = state[o][k] ? 'ON' : 'OFF';
+                sfx.click();
+                check();
+              },
+            },
+            h('span', { class: 'gw-num' }, String(k + 1)),
+            h('span', { class: 'gw-lever' }),
+            h('span', { class: 'gw-label', lang: 'en' }, 'OFF')
+          )
+        );
+        const box = h(
+          'div',
+          { class: 'gm-relay-panel' },
+          h('b', null, `${a.emoji} ${a.name}의 차단기`, ok),
+          h('div', { class: 'gw-switches' }, sw)
+        );
+        box.ok = ok;
+        box.owner = o;
+        return box;
+      });
+      const cards =
+        game.n === 1
+          ? [
+              h(
+                'div',
+                { class: 'gm-relay-card' },
+                h('b', null, '🤖 핍의 무전'),
+                bilingual(relayText(targets[0], devLv()), devLv(), { speaker: 'pip' })
+              ),
+            ]
+          : game.players
+              .map((_, o) => o)
+              .filter((o) => local().includes(reader(o)))
+              .map((o) => {
+                const rd = reader(o);
+                const to = avatarOf(P(o).avatar);
+                // 어려운 설명을 받은 사람은 풀어서, 듣는 사람 수준에 맞게 짧고 쉽게 말해 준다
+                const simpler = levelRank(lvOf(o)) <= 1 && levelRank(lvOf(o)) < levelRank(lvOf(rd));
+                return h(
+                  'div',
+                  { class: 'gm-relay-card' },
+                  h('b', null, `📢 ${to.emoji} ${to.name}에게 영어로 알려 주세요`),
+                  bilingual(relayText(targets[o], lvOf(rd)), lvOf(rd)),
+                  simpler
+                    ? h('small', { class: 'gm-ko' }, `💡 ${to.name}에게는 “Switch one, ON!”처럼 짧고 쉽게 말해 주세요.`)
+                    : null
+                );
+              });
+      const power = h(
+        'button',
+        { type: 'button', class: 'btn primary big', disabled: true, onclick: () => finish() },
+        '⚡ 전원 켜기!'
+      );
+      const check = () => {
+        let all = true;
+        for (const box of panels) {
+          const good = state[box.owner].every((b, k) => b === targets[box.owner][k]);
+          box.ok.textContent = good ? ' ✓' : '';
+          box.classList.toggle('good', good);
+          all &&= good;
+        }
+        power.disabled = !all;
+      };
+      let timer = 0;
+      const tick = () => {
+        left--;
+        clockEl.textContent = `⏱ ${left}초`;
+        if (left <= 10) clockEl.classList.add('late');
+        if (left <= 0) {
+          left = 30;
+          sfx.alarm();
+          toast('🔋 비상 배터리! 30초가 더 생겼어요.', { ms: 2500 });
+        }
+      };
+      const finish = () => {
+        clearInterval(timer);
+        sfx.win();
+        scene.setDark(false);
+        closePanel();
+        resolve();
+      };
+      clockEl.textContent = `⏱ ${left}초`;
+      timer = setInterval(tick, 1000);
+      panel(
+        '⚡ Blackout!',
         [
           h(
-            'div',
-            { class: 'gm-sushead' },
-            portrait(id, 'nervous'),
-            bilingual(
-              { en: 'Why do you think it was me? Show me two clues!', ko: '왜 나라고 생각해? 단서 두 개를 보여 줘!' },
-              lv,
-              { speaker: id }
-            )
+            'p',
+            { class: 'gm-lead' },
+            game.n === 1
+              ? '핍이 무전으로 알려 주는 대로 스위치를 맞춰요!'
+              : '내 스위치를 어떻게 할지는 다른 사람 폰에 있어요. 서로 영어로 알려 줘요!',
+            ' ',
+            clockEl
           ),
-          h('div', { class: 'gm-chips' }, chips),
-          out,
-          go,
+          cards,
+          panels,
+          power,
         ],
-        { sub: '증거 두 개 고르기' }
+        { sub: '긴급 정전 · 다 같이 복구', cls: 'gm-relay', onClose: () => clearInterval(timer) }
       );
-      say('Why do you think it was me?', id);
+      if (game.n === 1) setTimeout(() => (sfx.radio(), say(relayText(targets[0], devLv()).en, 'pip')), 400);
     });
   }
 
@@ -2014,7 +2344,30 @@ export function openGame(host, save, { onExit, onNewMission }) {
           h(
             'li',
             null,
-            `💎 별 조각 ${crystalsFound()}/${CRYSTALS_TOTAL} · ⏱ ${clockText(save.playMs)} · 🗣 이 폰에서 말한 영어 ${save.said}번`
+            `🤫 ${suspectOf(herring).ko}의 비밀: ${answerFor(herring, 'door', false, { culprit: game.culprit, herring }).ko}`
+          ),
+          h(
+            'li',
+            null,
+            `💎 별 조각 ${crystalsFound()}/${CRYSTALS_TOTAL} · ⏱ ${clockText(save.playMs)} · 🎙 무전 ${save.said}번`
+          )
+        ),
+        h(
+          'details',
+          { class: 'gm-timeline', open: true },
+          h('summary', null, '📜 사건의 전말 (실제로 일어난 일)'),
+          h(
+            'ol',
+            null,
+            caseTimeline(game.culprit, herring).map((row) =>
+              h(
+                'li',
+                { class: row.herring ? 'herring' : '' },
+                h('b', null, row.time),
+                h('span', { lang: 'en' }, row.text.en),
+                h('small', null, row.text.ko)
+              )
+            )
           )
         ),
         h(
@@ -2114,6 +2467,13 @@ export function openGame(host, save, { onExit, onNewMission }) {
       clear(bottom);
       updateHud();
       await talk(FINALE_INTRO, { moods: { pip: 'worried' } });
+      if (!save.relayDone) {
+        await talk(BLACKOUT, { moods: { pip: 'worried' } });
+        await blackoutRelay();
+        save.relayDone = true;
+        persist();
+        await talk(BLACKOUT_DONE);
+      }
       save.stage = 'finale';
       persist();
     }

@@ -5,6 +5,7 @@
 // 대사는 쉬운 영어(easy: Basic·IM1)와 보통 영어(hard: IM2·IM3) 두 가지에 한국어가 붙는다.
 
 import { pick, rngFor } from './logic.js';
+import { josa } from './puzzles.js';
 
 const T = (en, ko) => ({ en, ko });
 /** 대사 한 줄: who는 말하는 인물 */
@@ -129,6 +130,33 @@ export const suspectOf = (id) => SUSPECTS.find((s) => s.id === id);
 
 /** 이번 판의 범인 (시드로 정한다: 모든 폰에서 같다) */
 export const culpritOf = (seed) => pick(rngFor(seed, 'culprit'), SUSPECTS).id;
+
+/** 엉뚱한 비밀 때문에 거짓말을 하는 무고한 용의자 (범인이 아닌 사람 중 하나). 9:00에 나갔다가 9:04에 돌아왔다 */
+export const herringOf = (seed) =>
+  pick(
+    rngFor(seed, 'herring'),
+    SUSPECTS.filter((s) => s.id !== culpritOf(seed))
+  ).id;
+
+/** 무고한 용의자의 창피한 비밀 (출입 기록을 들이대면 털어놓는다) */
+export const SECRET = {
+  bolt: T(
+    "Hmph... fine. At nine o'clock I sneaked to the Music Room to practice my robot dance. Please don't tell anyone! I was back by 9:04.",
+    '흥… 좋아. 9시에 몰래 음악실에 가서 로봇 춤을 연습했어. 아무한테도 말하지 마! 9시 4분에는 돌아왔어.'
+  ),
+  zeek: T(
+    "Zip... OK! At nine o'clock I flew to the captain's room with a secret birthday card. It's a surprise party! I was back by 9:04.",
+    '쓩… 알았어! 9시에 선장님 방에 몰래 생일 카드를 갖다 놨어. 깜짝 파티거든! 9시 4분에는 돌아왔어.'
+  ),
+  mira: T(
+    "Oh dear. At nine o'clock I went to sing opera to my glow fish. They love it, but it's a little embarrassing. I was back by 9:04.",
+    '이런. 9시에 빛나는 물고기에게 오페라를 불러 주러 갔어요. 물고기들은 좋아하지만 좀 창피해요. 9시 4분에는 돌아왔어요.'
+  ),
+  momo: T(
+    "Squeak... Momo sneaked into the kitchen at nine o'clock and ate three cookies. Momo was back in bed by 9:04!",
+    '찍… 모모는 9시에 부엌에 몰래 가서 쿠키 세 개를 먹었어. 9시 4분에는 침대로 돌아왔어!'
+  ),
+};
 
 export const TRAIT = {
   big: T('big', '컸다'),
@@ -386,8 +414,9 @@ export const ROOMS = [
 ];
 
 /** 방을 마치면 핍이 기억 칩에서 떠올린 증거 */
-export function evidenceOf(room, culprit) {
+export function evidenceOf(room, culprit, herring) {
   const s = suspectOf(culprit);
+  const hs = suspectOf(herring ?? SUSPECTS.find((x) => x.id !== culprit).id);
   if (room === 0)
     return {
       key: 'size',
@@ -473,8 +502,8 @@ export function evidenceOf(room, culprit) {
     key: 'log',
     value: s.id,
     card: T(
-      `Door log: the ${s.place.en} door opened at 9:05 and 9:20.`,
-      `출입 기록: ${s.place.ko} 문이 9:05와 9:20에 열렸다.`
+      `Door log: the ${hs.place.en} door opened at 9:00 and 9:04. The ${s.place.en} door opened at 9:05 and 9:20. The Core Room opened at 9:10.`,
+      `출입 기록: ${hs.place.ko} 문이 9:00과 9:04에, ${s.place.ko} 문이 9:05와 9:20에 열렸다. 코어 룸은 9:10에 열렸다.`
     ),
     lines: [
       L(
@@ -486,18 +515,19 @@ export function evidenceOf(room, culprit) {
       ),
       L(
         'pip',
-        'Look at the door log. One door opened at 9:05!',
-        '출입 기록을 봐. 9시 5분에 문 하나가 열렸어!',
-        'Now we can read the door log from last night. Look carefully: one room door opened at 9:05 and again at 9:20!',
-        '이제 어젯밤 출입 기록을 볼 수 있어. 잘 봐. 어떤 방 문이 9시 5분에 열리고 9시 20분에 또 열렸어!'
+        'Look at the door log. Two doors opened! Check the times.',
+        '출입 기록을 봐. 문 두 개가 열렸어! 시간을 잘 봐.',
+        'Now we can read the door log from last night. Two room doors opened — but only one person was out when the Core Room opened at 9:10!',
+        '이제 어젯밤 출입 기록을 볼 수 있어. 방 문 두 개가 열렸는데, 9시 10분에 코어 룸이 열릴 때 밖에 있던 건 한 명뿐이야!'
       ),
     ],
   };
 }
 
 /** 출입 기록 (모두 같은 시간에 자기 방에 들어갔고, 범인 방만 9:05에 열리고 9:20에 다시 열렸다) */
-export function doorLog(culprit) {
+export function doorLog(culprit, herring) {
   const c = suspectOf(culprit);
+  const hr = suspectOf(herring ?? SUSPECTS.find((x) => x.id !== culprit).id);
   const rows = [...SUSPECTS]
     .sort((a, b) => a.arrive.localeCompare(b.arrive))
     .map((s) => ({
@@ -506,6 +536,16 @@ export function doorLog(culprit) {
       what: T(`${s.name} went in.`, `${s.ko}가 들어갔다.`),
     }));
   rows.push(
+    {
+      time: '9:00',
+      door: hr.place,
+      what: T('Opened from the inside. Someone went out.', '안에서 열림. 누군가 나갔다.'),
+    },
+    {
+      time: '9:04',
+      door: hr.place,
+      what: T('Opened from the outside. Someone went in.', '밖에서 열림. 누군가 들어갔다.'),
+    },
     {
       time: '9:05',
       door: c.place,
@@ -566,6 +606,14 @@ export const QUESTIONS = [
     id: 'saw',
     q: T('Did you see anything?', '뭔가 봤어요?'),
     qh: T('Did you see or hear anything strange?', '이상한 걸 보거나 들었어요?'),
+  },
+  {
+    id: 'door',
+    q: T('Your door opened last night. Why?', '어젯밤 네 방 문이 열렸어. 왜야?'),
+    qh: T(
+      'The door log shows your door opened last night. Can you explain that?',
+      '출입 기록에 네 방 문이 열린 게 나와. 설명해 줄래?'
+    ),
   },
   {
     id: 'food',
@@ -736,6 +784,29 @@ const ANSWERS = {
 };
 /** @returns {{en: string, ko: string}} */
 export const answerOf = (suspect, qid, hard) => ANSWERS[suspect][qid][hard ? 1 : 0];
+
+/**
+ * 판에 따라 달라지는 대답까지 포함한 대답. 'door'(출입 기록 들이대기): 붉은 청어는 창피한 비밀을 털어놓고,
+ * 범인은 당황해 둘러대고, 나머지는 문이 열리지 않았다고 한다
+ */
+export function answerFor(suspect, qid, hard, { culprit, herring }) {
+  if (qid !== 'door') return answerOf(suspect, qid, hard);
+  const s = suspectOf(suspect);
+  if (suspect === herring) return SECRET[suspect];
+  if (suspect === culprit)
+    return hard
+      ? T(
+          'Th-the door? Maybe it opened by itself... Doors on this station are very old, you know!',
+          '무, 문이라고? 혼자 열렸나 보지… 이 정거장 문은 아주 낡았거든!'
+        )
+      : T('Um... the door opened by itself!', '음… 문이 혼자 열렸어!');
+  return hard
+    ? T(
+        `Check the log again. My door opened at ${s.arrive} when I went in, and never again.`,
+        `기록을 다시 봐. 내 방 문은 ${s.arrive}에 들어갈 때 열리고 그 뒤로 안 열렸어.`
+      )
+    : T(`No! My door did not open after ${s.arrive}.`, `아니야! ${s.arrive} 뒤로 내 방 문은 안 열렸어.`);
+}
 
 /** 범인이 고백하는 말 (왜 가져갔는지: 모두 나쁜 뜻이 아니다) */
 export const CONFESSION = {
@@ -925,3 +996,190 @@ export const FLAVOR = {
     '모모의 화분 침대야. 모모는 어디 갔지? 이불이 차가워.'
   ),
 };
+
+/* ---------- 마지막 방 추가: 정전 사보타주 · 반박 · 사건의 전말 ---------- */
+
+/** 코어 룸에 들어서자 범인이 몰래 차단기를 내린다 */
+export const BLACKOUT = [
+  L(
+    'narrator',
+    'CLICK! The lights go out again!',
+    '딸깍! 불이 또 꺼졌어요!',
+    'CLICK! Someone pulls the main breaker, and the Core Room goes dark!',
+    '딸깍! 누군가 주 차단기를 내려 코어 룸이 깜깜해졌어요!'
+  ),
+  L(
+    'pip',
+    'Fix the switches together. Quick!',
+    '다 같이 스위치를 맞춰! 어서!',
+    "Each of you has a switch panel, but the instructions are on a teammate's phone. Tell each other what to do — quickly!",
+    '각자 스위치판이 있는데, 설명은 다른 사람 폰에 있어. 서로 영어로 알려 줘. 어서!'
+  ),
+];
+export const BLACKOUT_DONE = [
+  L(
+    'pip',
+    'The lights are back! Someone is nervous...',
+    '불이 다시 켜졌어! 누군가 떨고 있어…',
+    'The lights are back! Someone here pulled that breaker. The culprit is getting nervous!',
+    '불이 다시 켜졌어! 여기 있는 누군가가 차단기를 내렸어. 범인이 초조해하고 있다는 뜻이야!'
+  ),
+];
+
+/** 정전 복구: 사람마다 스위치 3개의 목표 (모두 꺼진 채 시작하므로 적어도 하나는 켜야 한다) */
+export function relayTargets(seed, n) {
+  const r = rngFor(seed, 'relay');
+  return Array.from({ length: n }, () => {
+    let t;
+    do t = [0, 1, 2].map(() => r() < 0.5);
+    while (!t.some(Boolean));
+    return t;
+  });
+}
+
+const ON_OFF = (b) => (b ? 'ON' : 'OFF');
+const IM3_RELAY = {
+  111: 'Every single switch on the panel should be on.',
+  110: 'Switch three stays off; the other two are on.',
+  101: 'Turn on both ends, but leave the middle one off.',
+  '011': 'Leave switch one off and turn on the rest.',
+  100: 'Only the switch on the far left is on.',
+  '010': 'Only the middle switch is on.',
+  '001': 'Only the switch on the far right is on.',
+};
+/** 다른 사람 스위치판에 대한 설명 (읽는 사람의 수준에 맞게) */
+export function relayText(target, lv) {
+  const on = target.map((b, i) => (b ? i + 1 : 0)).filter(Boolean);
+  const off = target.map((b, i) => (b ? 0 : i + 1)).filter(Boolean);
+  if (lv === 'basic')
+    return T(
+      target.map((b, i) => `Switch ${i + 1}: ${ON_OFF(b)}!`).join(' '),
+      target.map((b, i) => `${i + 1}번 ${b ? '켜' : '꺼'}!`).join(' ')
+    );
+  if (lv === 'im1')
+    return T(
+      `Turn on switch ${on.map(numWordLite).join(' and switch ')}.${off.length ? ` Leave the others off.` : ''}`,
+      `스위치 ${on.join('번, ')}번을 켜.${off.length ? ' 나머지는 꺼 둬.' : ''}`
+    );
+  if (lv === 'im2') {
+    if (!off.length) return T('All three switches must be on.', '스위치 세 개가 모두 켜져야 해.');
+    if (off.length === 1)
+      return T(
+        `Only switch ${off[0]} is off. The other two are on.`,
+        `${off[0]}번만 꺼져 있고, 나머지 둘은 켜져 있어.`
+      );
+    return T(`Only switch ${on[0]} is on. The other two are off.`, `${on[0]}번만 켜져 있고, 나머지 둘은 꺼져 있어.`);
+  }
+  return T(IM3_RELAY[target.map((b) => (b ? 1 : 0)).join('')]);
+}
+const numWordLite = (n) => ['zero', 'one', 'two', 'three'][n];
+
+/** 맞게 지목하면 범인이 붉은 청어에게 뒤집어씌우려 한다 → 반박할 증거 고르기 */
+export function rebuttal(culprit, herring) {
+  const c = suspectOf(culprit);
+  const h = suspectOf(herring);
+  const trait = ['size', 'color', 'kind'].find((k) => c[k] !== h[k]);
+  const traitText = {
+    size: T(
+      `The shadow was ${c.size}, but ${h.name} is ${h.size}.`,
+      `그림자는 ${c.size === 'big' ? '컸는데' : '작았는데'}, ${h.ko}는 ${h.size === 'big' ? '커요' : '작아요'}.`
+    ),
+    color: T(
+      `The smudge on the leaf was ${c.color}, but ${h.name} is ${h.color}.`,
+      `잎의 자국은 ${TRAIT[c.color].ko}인데, ${h.ko}는 ${TRAIT[h.color].ko}이에요.`
+    ),
+    kind:
+      c.kind === 'robot'
+        ? T(`There were oil drops, but ${h.name} is not a robot.`, `기름 방울이 있었는데, ${h.ko}는 로봇이 아니에요.`)
+        : T(`There were cookie crumbs, but ${h.name} is a robot.`, `쿠키 부스러기가 있었는데, ${h.ko}는 로봇이에요.`),
+  }[trait];
+  return {
+    line: L(
+      culprit,
+      `Not me! ${h.name}'s door opened too!`,
+      `나 아니야! ${h.ko}의 방 문도 열렸잖아!`,
+      `It wasn't me! ${h.name}'s door opened last night too. Maybe ${h.name} took it!`,
+      `나 아니야! 어젯밤 ${h.ko}의 방 문도 열렸잖아. ${h.ko}가 가져갔을지도 몰라!`
+    ),
+    options: [
+      {
+        id: 'time',
+        ok: true,
+        text: T(
+          `${h.name} came back at 9:04, before the Core Room opened at 9:10.`,
+          `${h.ko}는 9시 4분에 돌아왔어요. 코어 룸이 열린 9시 10분보다 먼저예요.`
+        ),
+      },
+      { id: 'trait', ok: true, text: traitText },
+      { id: 'quiet', ok: false, text: T(`${h.name} was very quiet today.`, `${h.ko}는 오늘 아주 조용했어요.`) },
+    ],
+  };
+}
+
+/** 사건의 전말: 범인이 실제로 움직인 시간표 (수료증에서 공개) */
+export function caseTimeline(culprit, herring) {
+  const c = suspectOf(culprit);
+  const h = suspectOf(herring);
+  const trace = c.kind === 'robot' ? T('oil drops', '기름 방울') : T('cookie crumbs', '쿠키 부스러기');
+  return [
+    { time: c.arrive, text: T(`${c.name} went into the ${c.place.en}.`, `${c.ko}가 ${c.place.ko}에 들어갔다.`) },
+    {
+      time: '9:00',
+      text: T(
+        `${h.name} sneaked out for a secret (and was back at 9:04).`,
+        `${h.ko}가 비밀스러운 일로 잠깐 나갔다 (9:04에 돌아옴).`
+      ),
+      herring: true,
+    },
+    {
+      time: '9:05',
+      text: T(`${c.name} quietly left the ${c.place.en}.`, `${c.ko}가 ${josa(c.place.ko, '을', '를')} 몰래 나왔다.`),
+    },
+    { time: '9:10', text: T(`${c.name} took the Star Core. BLACKOUT!`, `${c.ko}가 별의 심장을 가져갔다. 정전!`) },
+    {
+      time: '9:12',
+      text: T(
+        `Pip's camera saw a ${c.size} shadow in the hallway.`,
+        `핍의 카메라가 복도에서 ${c.size === 'big' ? '큰' : '작은'} 그림자를 봤다.`
+      ),
+    },
+    {
+      time: '9:15',
+      text: T(
+        `${c.name} brushed a leaf in the Space Garden (${c.color}).`,
+        `${c.ko}가 우주 정원의 잎을 스쳤다 (${TRAIT[c.color].ko}).`
+      ),
+    },
+    {
+      time: '9:17',
+      text: T(
+        `${c.name} left ${trace.en} by the workshop elevator.`,
+        `${c.ko}가 작업실 엘리베이터 옆에 ${josa(trace.ko, '을', '를')} 남겼다.`
+      ),
+    },
+    {
+      time: '9:20',
+      text: T(
+        `${c.name} went back into the ${c.place.en} and hid the Star Core.`,
+        `${c.ko}가 ${c.place.ko}에 돌아가 별의 심장을 숨겼다.`
+      ),
+    },
+    {
+      time: 'Today',
+      text: T(`${c.name} pulled the breaker when the cadets came in.`, `사관생도들이 오자 ${c.ko}가 차단기를 내렸다.`),
+    },
+  ];
+}
+
+/** 기억 칩을 받지 않은 사람의 폰에서 핍이 하는 말 (내용은 받은 사람에게 물어봐야 한다) */
+export function chipGiven(room, holderName) {
+  return [
+    L(
+      'pip',
+      `I found memory chip ${room + 1}! I gave it to ${holderName}.`,
+      `기억 칩 ${room + 1}번을 찾았어! ${holderName}에게 줬어.`,
+      `I found memory chip number ${room + 1}, and I gave it to ${holderName}. Ask what it shows!`,
+      `기억 칩 ${room + 1}번을 찾아서 ${holderName}에게 줬어. 무엇이 보이는지 물어봐!`
+    ),
+  ];
+}

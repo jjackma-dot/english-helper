@@ -1915,6 +1915,56 @@ export function closeup(art) {
         )
       );
     }
+    case 'maze': {
+      // 레이저 지도: 빨간 칸이 레이저, 파란 점이 팔, 별이 톱니바퀴. path가 있으면 따라갈 화살표 (Basic)
+      const { cols, rows, start, goal, walls } = art.maze;
+      const c = 52;
+      const w = cols * c;
+      const hh = rows * c;
+      const cells = [];
+      for (let y = 0; y < rows; y++)
+        for (let x = 0; x < cols; x++) cells.push(rect(x * c + 3, y * c + 3, c - 6, c - 6, '#0f2d44', { rx: 8 }));
+      const lasers = walls.map(([x, y]) =>
+        g(
+          null,
+          rect(x * c + 3, y * c + 3, c - 6, c - 6, '#ff3355', { rx: 8, opacity: 0.85 }),
+          glow(x * c + c / 2, y * c + c / 2, c * 0.7, 'R')
+        )
+      );
+      const arrows = [];
+      if (art.path) {
+        let [x, y] = start;
+        const STEP = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
+        const ANG = { up: 0, right: 90, down: 180, left: 270 };
+        for (const d of art.path) {
+          arrows.push(
+            path('M0 -13L10 4H4V13H-4V4H-10Z', '#ffd23f', {
+              transform: `translate(${x * c + c / 2} ${y * c + c / 2}) rotate(${ANG[d]})`,
+            })
+          );
+          x += STEP[d][0];
+          y += STEP[d][1];
+        }
+      }
+      return svg(
+        `0 0 ${w} ${hh}`,
+        { class: 'gm-closeup' },
+        rect(0, 0, w, hh, '#071321', { rx: 12 }),
+        g(
+          { transform: art.rotated ? `rotate(90 ${w / 2} ${hh / 2})` : null },
+          cells,
+          lasers,
+          arrows,
+          circ(start[0] * c + c / 2, start[1] * c + c / 2, 14, '#3b82f6', { stroke: '#ffffff', 'stroke-width': 4 }),
+          s('polygon', {
+            points: starPoints(goal[0] * c + c / 2, goal[1] * c + c / 2, 17, 7),
+            fill: '#ffd23f',
+            stroke: '#ffffff',
+            'stroke-width': 2,
+          })
+        )
+      );
+    }
     case 'arrows':
       return svg(
         '0 0 330 96',

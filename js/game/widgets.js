@@ -8,6 +8,7 @@ import { flowerIcon, fruitIcon, gearIcon, planetIcon, shapeIcon } from './art.js
 import { sfx, playMelody } from './sfx.js';
 import { s, svg } from './svg.js';
 import { canListen, listenOnce } from './voice.js';
+import { mazeStep } from './logic.js';
 
 const hex = (c) => COLORS[c]?.hex ?? c;
 const dot = (c, cls = 'gw-dot') => h('span', { class: cls, style: { background: hex(c) } });
@@ -715,8 +716,380 @@ export function voiceInput({ prompt, onHeard } = {}) {
   };
 }
 
-export function createWidget(lock) {
+/* ---------- 손으로 돌리고 누르는 잠금 ---------- */
+
+/** 금고 다이얼: 손가락으로 돌려 맨 위 ▼에 숫자를 맞추고 손을 떼면 "딸깍" 들어간다 (숫자를 눌러도 그 숫자로 돈다) */
+function safe(lock) {
+  const digits = [];
+  let angle = 0; // 돌린 각도 (시계 방향 +)
+  let drag = null;
+  const slots = h('div', { class: 'gw-slots', 'aria-live': 'polite' });
+  const drawSlots = () => {
+    clear(slots);
+    for (let i = 0; i < lock.len; i++)
+      slots.append(
+        h(
+          'span',
+          { class: `gw-slot${digits[i] != null ? ' on' : ''}${i === digits.length ? ' next' : ''}` },
+          digits[i] != null ? String(digits[i]) : String(i + 1)
+        )
+      );
+  };
+  const rotor = s('g', { class: 'gw-rotor' });
+  const top = () => ((Math.round(-angle / 36) % 10) + 10) % 10;
+  const setAngle = (a, animate = false) => {
+    angle = a;
+    rotor.classList?.toggle('anim', animate);
+    rotor.setAttribute('transform', `rotate(${angle.toFixed(1)})`);
+  };
+  const enter = () => {
+    if (digits.length >= lock.len) return;
+    digits.push(top());
+    sfx.click();
+    drawSlots();
+  };
+  rotor.append(
+    s('circle', { r: 92, fill: '#2b3249', stroke: '#8d99b8', 'stroke-width': 6 }),
+    s('circle', { r: 46, fill: '#1d2440', stroke: '#46506d', 'stroke-width': 4 }),
+    ...Array.from({ length: 30 }, (_, i) =>
+      s('line', {
+        x1: 0,
+        y1: -88,
+        x2: 0,
+        y2: i % 3 ? -82 : -76,
+        stroke: '#9fb0cc',
+        'stroke-width': 2,
+        transform: `rotate(${i * 12})`,
+      })
+    ),
+    ...Array.from({ length: 10 }, (_, i) =>
+      s(
+        'g',
+        {
+          transform: `rotate(${i * 36})`,
+          class: 'gw-safe-num',
+          'data-value': String(i),
+          onclick: (e) => {
+            e.stopPropagation?.();
+            // 이 숫자가 맨 위로 오게 가장 가까운 쪽으로 돌린다
+            const want = -i * 36;
+            const turns = Math.round((angle - want) / 360);
+            setAngle(want + turns * 360, true);
+            enter();
+          },
+        },
+        s('circle', { cy: -64, r: 15, fill: 'transparent' }),
+        s(
+          'text',
+          {
+            y: -57,
+            'text-anchor': 'middle',
+            'font-size': 20,
+            'font-weight': 800,
+            fill: '#ffffff',
+            'font-family': 'system-ui',
+          },
+          String(i)
+        )
+      )
+    )
+  );
+  const pad = svg(
+    '-110 -118 220 228',
+    { class: 'gw-safe', role: 'group', 'aria-label': 'safe dial' },
+    rotor,
+    s('circle', { r: 10, fill: '#8d99b8' }),
+    s('polygon', { points: '0,-96 -10,-114 10,-114', fill: '#ffd23f' })
+  );
+  const angleAt = (e) => {
+    const r = pad.getBoundingClientRect?.();
+    if (!r?.width) return 0;
+    return (Math.atan2(e.clientY - (r.top + r.height / 2), e.clientX - (r.left + r.width / 2)) * 180) / Math.PI;
+  };
+  pad.addEventListener('pointerdown', (e) => {
+    if (e.target?.closest?.('.gw-safe-num') && e.pointerType !== 'touch') return; // 마우스로 숫자를 누르면 클릭으로 처리
+    drag = { a0: angleAt(e), start: angle, moved: 0 };
+    pad.setPointerCapture?.(e.pointerId);
+  });
+  pad.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    let d = angleAt(e) - drag.a0;
+    if (d > 180) d -= 360;
+    if (d < -180) d += 360;
+    drag.moved = Math.max(drag.moved, Math.abs(d));
+    const before = top();
+    setAngle(drag.start + d);
+    if (top() !== before) sfx.key();
+  });
+  const end = () => {
+    if (!drag) return;
+    const moved = drag.moved;
+    drag = null;
+    setAngle(Math.round(angle / 36) * 36, true);
+    if (moved > 12) enter();
+  };
+  pad.addEventListener('pointerup', end);
+  pad.addEventListener('pointercancel', end);
+  drawSlots();
+  return {
+    el: h(
+      'div',
+      { class: 'gw gw-safebox' },
+      slots,
+      pad,
+      h('p', { class: 'gw-note' }, '다이얼을 돌려 ▼에 숫자를 맞추고 손을 떼면 딸깍! (숫자를 눌러도 돼요)'),
+      h(
+        'div',
+        { class: 'gw-row' },
+        tool('하나 지우기', 'back', () => {
+          digits.pop();
+          drawSlots();
+        }),
+        tool('모두 지우기', 'trash', () => {
+          digits.length = 0;
+          drawSlots();
+        })
+      )
+    ),
+    get: () => digits.join(''),
+    ready: () => digits.length === lock.len,
+    reset() {
+      digits.length = 0;
+      drawSlots();
+    },
+  };
+}
+
+/** 누르고 있으면 숫자가 올라가고(끝까지 가면 처음부터), 손을 뗀 숫자가 답이 된다 */
+function gauge(lock, { level = 'im1', onDone } = {}) {
+  const stepMs = { basic: 560, im1: 480, im2: 400, im3: 340 }[level] ?? 450;
+  let v = lock.min ?? 0;
+  let timer = 0;
+  let released = false;
+  let moved = false;
+  const tip = h('small', null, '꾹 누르고 있다가 떼기');
+  const num = h('output', { class: 'gw-big' }, String(v));
+  const fill = h('span', { class: 'gw-gauge-fill' });
+  const draw = () => {
+    num.textContent = String(v);
+    fill.style.height = `${((v - (lock.min ?? 0)) / (lock.max - (lock.min ?? 0))) * 100}%`;
+  };
+  const stop = () => {
+    if (!timer) return;
+    clearInterval(timer);
+    timer = 0;
+    btn.classList.remove('holding');
+    if (!moved) {
+      // 숫자가 오르기 전에 톡 누르고 떼면 실수로 보고 다시 하게 한다 (정답은 늘 최솟값보다 크다)
+      tip.textContent = '손을 떼지 말고 꾹 누르고 있어요!';
+      sfx.tap();
+      return;
+    }
+    released = true;
+    sfx.click();
+    onDone?.();
+  };
+  const start = (e) => {
+    e?.preventDefault?.();
+    if (timer) return;
+    released = false;
+    moved = false;
+    tip.textContent = '꾹 누르고 있다가 떼기';
+    v = lock.min ?? 0;
+    draw();
+    btn.classList.add('holding');
+    timer = setInterval(() => {
+      moved = true;
+      v = v + 1 > lock.max ? (lock.min ?? 0) : v + 1;
+      sfx.tick?.(v);
+      draw();
+    }, stepMs);
+  };
+  const btn = h(
+    'button',
+    {
+      type: 'button',
+      class: 'gw-hold',
+      onpointerdown: start,
+      onpointerup: stop,
+      onpointerleave: stop,
+      onpointercancel: stop,
+      onkeydown: (e) => (e.key === ' ' || e.key === 'Enter') && start(e),
+      onkeyup: (e) => (e.key === ' ' || e.key === 'Enter') && stop(),
+      oncontextmenu: (e) => e.preventDefault(),
+    },
+    h('b', null, 'HOLD'),
+    tip
+  );
+  draw();
+  return {
+    el: h(
+      'div',
+      { class: 'gw gw-gauge' },
+      h(
+        'div',
+        { class: 'gw-gauge-row' },
+        h('div', { class: 'gw-gauge-bar' }, fill),
+        h('div', { class: 'gw-gauge-read' }, h('small', null, lock.label || ''), num)
+      ),
+      btn
+    ),
+    get: () => v,
+    ready: () => released,
+    reset() {
+      clearInterval(timer);
+      timer = 0;
+      released = false;
+      v = lock.min ?? 0;
+      draw();
+    },
+    stop: () => clearInterval(timer),
+  };
+}
+
+/** 보이지 않는 레이저 미로: 레이저에 닿으면 지지직! 처음 자리로. 닿은 레이저는 빨갛게 남는다 */
+function maze(lock, { onDone } = {}) {
+  const m = lock.maze;
+  const c = 40;
+  let pos = [...m.start];
+  let reached = false;
+  const hits = [];
+  const trail = [[...m.start]];
+  const g = s('g');
+  const draw = (flash = false) => {
+    while (g.firstChild) g.firstChild.remove();
+    for (let y = 0; y < m.rows; y++)
+      for (let x = 0; x < m.cols; x++)
+        g.append(
+          s('rect', {
+            x: x * c + 2,
+            y: y * c + 2,
+            width: c - 4,
+            height: c - 4,
+            rx: 7,
+            fill: '#0f2d44',
+            stroke: '#1c4a66',
+          })
+        );
+    for (const [x, y] of hits)
+      g.append(
+        s('rect', { x: x * c + 2, y: y * c + 2, width: c - 4, height: c - 4, rx: 7, fill: '#ff3355', opacity: 0.8 })
+      );
+    g.append(
+      s('polygon', {
+        points: starPts(m.goal[0] * c + c / 2, m.goal[1] * c + c / 2),
+        fill: '#ffd23f',
+        stroke: '#ffffff',
+        'stroke-width': 2,
+      })
+    );
+    g.append(
+      s('polyline', {
+        points: trail.map(([x, y]) => `${x * c + c / 2},${y * c + c / 2}`).join(' '),
+        fill: 'none',
+        stroke: '#7df9ff',
+        'stroke-width': 4,
+        'stroke-linecap': 'round',
+        opacity: 0.6,
+      })
+    );
+    g.append(
+      s('circle', {
+        cx: pos[0] * c + c / 2,
+        cy: pos[1] * c + c / 2,
+        r: 12,
+        fill: flash ? '#ff3355' : '#3b82f6',
+        stroke: '#ffffff',
+        'stroke-width': 3,
+      })
+    );
+  };
+  const status = h('p', { class: 'gw-note', 'aria-live': 'polite' }, '파란 점(로봇 팔)을 ★까지 움직여요');
+  const press = (d) => {
+    if (reached) return;
+    const real = lock.map?.[d] ?? d;
+    const r = mazeStep(m, pos, real);
+    if (r.hit === 'edge') {
+      sfx.bad();
+      status.textContent = '벽이에요! 더 갈 수 없어요.';
+      return;
+    }
+    if (r.hit === 'wall') {
+      if (!hits.some(([x, y]) => x === r.pos[0] && y === r.pos[1])) hits.push(r.pos);
+      sfx.zap?.();
+      try {
+        navigator.vibrate?.(120);
+      } catch {
+        /* 무시 */
+      }
+      status.textContent = '지지직! 레이저에 닿았어요. 처음 자리로 돌아가요.';
+      pos = [...m.start];
+      trail.length = 1;
+      draw(true);
+      return;
+    }
+    pos = r.pos;
+    trail.push([...pos]);
+    sfx.key();
+    status.textContent = '';
+    if (pos[0] === m.goal[0] && pos[1] === m.goal[1]) {
+      reached = true;
+      status.textContent = '톱니바퀴를 잡았어요!';
+      draw();
+      onDone?.();
+      return;
+    }
+    draw();
+  };
+  draw();
+  const pad = h(
+    'div',
+    { class: 'gw-pad gw-cross' },
+    ['up', 'left', 'right', 'down'].map((d) =>
+      h(
+        'button',
+        { type: 'button', class: 'gw-opt', 'data-value': d, onclick: () => press(d) },
+        h('span', { class: 'gw-arrow' }, DIRS[d].arrow),
+        h('span', { class: 'gw-label', lang: 'en' }, DIRS[d].en)
+      )
+    )
+  );
+  return {
+    el: h(
+      'div',
+      { class: 'gw gw-maze' },
+      svg(`0 0 ${m.cols * c} ${m.rows * c}`, { class: 'gw-armgrid', role: 'img', 'aria-label': 'laser grid' }, g),
+      status,
+      pad
+    ),
+    get: () => (reached ? 'goal' : null),
+    ready: () => reached,
+    reset() {
+      pos = [...m.start];
+      trail.length = 1;
+      reached = false;
+      draw();
+    },
+  };
+}
+const starPts = (cx, cy) => {
+  const pts = [];
+  for (let i = 0; i < 10; i++) {
+    const r = i % 2 ? 6 : 14;
+    const a = -Math.PI / 2 + (i * Math.PI) / 5;
+    pts.push(`${(cx + r * Math.cos(a)).toFixed(1)},${(cy + r * Math.sin(a)).toFixed(1)}`);
+  }
+  return pts.join(' ');
+};
+
+export function createWidget(lock, opts = {}) {
   switch (lock.widget) {
+    case 'safe':
+      return safe(lock);
+    case 'gauge':
+      return gauge(lock, opts);
+    case 'maze':
+      return maze(lock, opts);
     case 'colors':
       return colors(lock);
     case 'melody':

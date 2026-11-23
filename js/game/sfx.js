@@ -52,6 +52,26 @@ function tone(freq, dur = 0.15, { type = 'sine', vol = 0.18, at = 0, slide = 0 }
   }
 }
 
+/** 지지직 하는 잡음 (무전기). dur초 */
+function noise(dur = 0.18, vol = 0.08, at = 0) {
+  const a = audio();
+  if (!a || typeof a.createBuffer !== 'function') return;
+  try {
+    const len = Math.floor(a.sampleRate * dur);
+    const buf = a.createBuffer(1, len, a.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / len);
+    const src = a.createBufferSource();
+    src.buffer = buf;
+    const gn = a.createGain();
+    gn.gain.value = vol;
+    src.connect(gn).connect(a.destination);
+    src.start(a.currentTime + at);
+  } catch {
+    /* 무시 */
+  }
+}
+
 /** 종소리 꽃 음 (도·레·미·솔·라) */
 export const FLOWER_FREQ = { pink: 523.25, orange: 587.33, yellow: 659.25, blue: 783.99, purple: 880 };
 
@@ -82,6 +102,20 @@ export const sfx = {
       tone(f, 0.22, { type: 'triangle', vol: 0.14, at: i * 0.12 })
     ),
   beep: () => tone(1320, 0.08, { type: 'sine', vol: 0.08 }),
+  click: () => tone(2200, 0.03, { type: 'square', vol: 0.06 }),
+  tick: (n = 0) => tone(300 + n * 45, 0.05, { type: 'triangle', vol: 0.07 }),
+  zap: () => {
+    buzz(120);
+    tone(900, 0.25, { type: 'sawtooth', vol: 0.08, slide: -700 });
+    noise(0.15, 0.06);
+  },
+  /** 무전기: 치직- 삐빅 */
+  radio: () => {
+    noise(0.16, 0.07);
+    tone(1400, 0.06, { type: 'sine', vol: 0.08, at: 0.18 });
+    tone(1800, 0.06, { type: 'sine', vol: 0.08, at: 0.26 });
+  },
+  static: () => noise(0.08, 0.05),
 };
 
 /** 멜로디 (꽃 색 순서) */

@@ -46,13 +46,32 @@ export function assignRoles(levels) {
   const order = levels.map((lv, i) => ({ i, r: levelRank(lv) })).sort((a, b) => a.r - b.r || a.i - b.i);
   const buddy = order[0].i;
   if (n === 1) return { roles: ['captain'], buddy: 0, captain: 0 };
-  const captain = order[n - 1].i;
+  // 캡틴: 가장 높은 수준 중 먼저 고른 사람 (짝꿍과 겹치면 그다음)
+  const top = order[n - 1].r;
+  const captain = order.find((o) => o.r === top && o.i !== buddy)?.i ?? order[n - 1].i;
   const roles = Array(n).fill('');
   roles[buddy] = 'buddy';
   roles[captain] = 'captain';
   const rest = ['engineer', 'navigator'];
   for (const { i } of order) if (!roles[i]) roles[i] = rest.shift();
   return { roles, buddy, captain };
+}
+
+/**
+ * 핍의 기억 칩(증거)을 누가 받는지: 쉬운 증거(그림자 크기·색·흔적)는 낮은 수준부터 한 명씩, 출입 기록은 가장 높은 수준(캡틴).
+ * 증거 내용은 받은 사람의 폰에만 보이므로, 다른 사람은 영어로 물어봐야 한다
+ * @param {number} chip 0~3 (방 번호와 같다)
+ * @returns {number} 플레이어 번호
+ */
+export function chipHolder(chip, levels) {
+  const { captain } = assignRoles(levels);
+  if (chip === 3 || levels.length === 1) return captain;
+  // 나머지 칩은 캡틴이 아닌 사람에게 낮은 수준부터 하나씩 (4명이면 모두 하나씩 받는다)
+  const others = levels
+    .map((lv, i) => ({ i, r: levelRank(lv) }))
+    .filter((o) => o.i !== captain)
+    .sort((a, b) => a.r - b.r || a.i - b.i);
+  return others[chip % others.length].i;
 }
 
 /* ---------- 시드 난수 ---------- */
@@ -183,8 +202,17 @@ export const newSeed = (random = Math.random) => Math.floor(random() * SEED_MAX)
 // 단서는 처음부터 볼 수 있으므로 서로 기다리다 막히는 일(교착)이 없다.
 export const PAIRS_PER_ROOM = 4;
 
+// 4명이면 방마다 단서를 주고받는 고리를 바꿔, 네 방을 지나는 동안 모든 사람이 다른 세 사람과 한 번 이상 말하게 한다.
+// 고리 [a, b, c, d]는 a → b → c → d → a (a의 단서로 b가 잠금을 푼다). 방마다 시작점도 돌려 맡는 짝도 바뀐다.
+const RINGS4 = [
+  [0, 1, 2, 3],
+  [0, 3, 2, 1],
+  [0, 2, 1, 3],
+  [0, 3, 1, 2],
+];
+
 /** 방 room에서 스테이션 k의 주인 (플레이어 번호). 방마다 돌아가며 맡는다 */
-export const stationOwner = (room, k, n) => (k + room) % n;
+export const stationOwner = (room, k, n) => (n === 4 ? RINGS4[room % 4][(k + room) % 4] : (k + room) % n);
 
 /** 짝 p의 잠금을 푸는 사람과 단서를 가진 사람 */
 export function pairOwners(room, p, n) {
@@ -221,12 +249,16 @@ const letters = (s) =>
 export function sameAnswer(widget, input, expected) {
   switch (widget) {
     case 'keypad':
+    case 'safe':
       return String(input ?? '').replace(/\D/g, '') === String(expected);
     case 'choice':
     case 'shape':
       return input === expected;
     case 'dial':
+    case 'gauge':
       return Number(input) === Number(expected);
+    case 'maze':
+      return input === 'goal';
     case 'multi':
       return Array.isArray(input) && input.length === expected.length && expected.every((x) => input.includes(x));
     case 'word': {
@@ -240,6 +272,47 @@ export function sameAnswer(widget, input, expected) {
     default:
       return eqArr(input, expected);
   }
+}
+
+/* ---------- 레이저 미로 (로봇 팔) ---------- */
+
+const STEPS = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
+
+/**
+ * 막힌 칸(레이저)을 피해 시작에서 목표까지 가장 짧은 길 (방향 목록). 길이 없으면 null
+ * @param {{cols: number, rows: number, start: number[], goal: number[], walls: number[][]}} maze
+ */
+export function mazePath({ cols, rows, start, goal, walls }) {
+  const blocked = new Set(walls.map(([x, y]) => `${x},${y}`));
+  const key = ([x, y]) => `${x},${y}`;
+  const prev = new Map([[key(start), null]]);
+  const queue = [start];
+  while (queue.length) {
+    const cur = queue.shift();
+    if (key(cur) === key(goal)) break;
+    for (const [d, [dx, dy]] of Object.entries(STEPS)) {
+      const nx = cur[0] + dx;
+      const ny = cur[1] + dy;
+      const k = `${nx},${ny}`;
+      if (nx < 0 || ny < 0 || nx >= cols || ny >= rows || blocked.has(k) || prev.has(k)) continue;
+      prev.set(k, { from: cur, d });
+      queue.push([nx, ny]);
+    }
+  }
+  if (!prev.has(key(goal))) return null;
+  const path = [];
+  for (let k = key(goal); prev.get(k); k = key(prev.get(k).from)) path.unshift(prev.get(k).d);
+  return path;
+}
+
+/** 미로에서 한 칸 움직이기: {pos, hit: 'wall'|'edge'|null} */
+export function mazeStep(maze, pos, dir) {
+  const [dx, dy] = STEPS[dir];
+  const nx = pos[0] + dx;
+  const ny = pos[1] + dy;
+  if (nx < 0 || ny < 0 || nx >= maze.cols || ny >= maze.rows) return { pos, hit: 'edge' };
+  if (maze.walls.some(([x, y]) => x === nx && y === ny)) return { pos: [nx, ny], hit: 'wall' };
+  return { pos: [nx, ny], hit: null };
 }
 
 /* ---------- 말한 문장 맞추기 (음성 인식 결과는 철자·숫자 표기가 들쭉날쭉하다) ---------- */

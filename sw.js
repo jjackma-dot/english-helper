@@ -27,6 +27,7 @@ const ASSETS = [
   'js/game/ai.js',
   'js/game/art.js',
   'js/game/logic.js',
+  'js/game/minigames.js',
   'js/game/plan.js',
   'js/game/play.js',
   'js/game/puzzles.js',

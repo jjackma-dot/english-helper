@@ -4,7 +4,7 @@
 // 수준이 높을수록 영어가 길어지고, 정답을 얻으려면 한 번 더 생각해야 한다(거꾸로·바꿔 넣기·계산·추론).
 // 한국어(ko)는 basic·im1·im2에만 있다 (im3는 영어만).
 
-import { pick, randInt, shuffle } from './logic.js';
+import { mazePath, pick, randInt, shuffle } from './logic.js';
 
 /* ---------- 공통 재료 ---------- */
 
@@ -47,7 +47,6 @@ export const DIRS = {
   right: { en: 'right', ko: '오른쪽', arrow: '➡' },
 };
 const NUM = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve'];
-const ORD = ['first', 'second', 'third', 'fourth'];
 
 export const numWord = (n) => NUM[n] ?? String(n);
 const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
@@ -81,7 +80,7 @@ export function ro(word) {
 const SPARE = ['orange', 'purple'];
 const fuse = {
   id: 'fuse',
-  clue: { obj: 'radio', en: 'Shuttle radio', ko: '셔틀 무전기', icon: '📻' },
+  clue: { obj: 'radio', game: 'tune', en: 'Shuttle radio', ko: '셔틀 무전기', icon: '📻' },
   lock: { obj: 'fusebox', en: 'Fuse box', ko: '퓨즈 상자', icon: '🔌' },
   token: (r) => ({
     colors: shuffle(r, ['red', 'blue', 'yellow', 'green']).slice(0, 3),
@@ -209,7 +208,7 @@ const fuse = {
 const NAME_LEN = (d) => NUM[d].length;
 const crates = {
   id: 'crates',
-  clue: { obj: 'crates', en: 'Cargo boxes', ko: '화물 상자', icon: '📦' },
+  clue: { obj: 'crates', game: 'scratch', en: 'Cargo boxes', ko: '화물 상자', icon: '📦' },
   lock: { obj: 'locker', en: 'Locker', ko: '사물함', icon: '🔐' },
   token: (r) => {
     const digits = shuffle(r, [1, 2, 3, 4, 5, 6, 7, 8, 9]).slice(0, 3);
@@ -248,37 +247,40 @@ const crates = {
     const code = digits.join('');
     if (lv === 'basic')
       return {
-        widget: 'keypad',
+        widget: 'safe',
         len: 3,
         expected: code,
         text: T(
-          'Open the locker! Type the numbers your friend says.',
-          '사물함을 열어요! 친구가 말하는 숫자를 누르세요.'
+          'Open the locker! Turn the dial to the numbers your friend says.',
+          '사물함을 열어요! 친구가 말하는 숫자로 다이얼을 돌리세요.'
         ),
       };
     if (lv === 'im1')
       return {
-        widget: 'keypad',
+        widget: 'safe',
         len: 3,
         expected: code,
-        text: T('Type the 3-number code to open the locker.', '숫자 세 개로 된 비밀번호를 눌러 사물함을 여세요.'),
+        text: T(
+          'Turn the dial to the 3-number code to open the locker.',
+          '다이얼을 돌려 숫자 세 개 비밀번호를 맞추세요.'
+        ),
       };
     if (lv === 'im2')
       return {
-        widget: 'keypad',
+        widget: 'safe',
         len: 3,
         expected: [...digits].sort((x, y) => x - y).join(''),
         text: T(
-          'The locker screen says: "Type the numbers from the smallest to the biggest."',
-          '사물함 화면: "가장 작은 숫자부터 가장 큰 숫자 순서로 누르세요."'
+          'The locker screen says: "Dial the numbers from the smallest to the biggest."',
+          '사물함 화면: "가장 작은 숫자부터 가장 큰 숫자 순서로 다이얼을 맞추세요."'
         ),
       };
     return {
-      widget: 'keypad',
+      widget: 'safe',
       len: 3,
       expected: digits.map(NAME_LEN).join(''),
       text: T(
-        'Someone who loves words reprogrammed this keypad: "Replace each number with the number of letters in its English name. For example, one becomes 3, because o-n-e has three letters."'
+        'Someone who loves words reprogrammed this dial: "Replace each number with the number of letters in its English name. For example, one becomes 3, because o-n-e has three letters."'
       ),
     };
   },
@@ -303,8 +305,8 @@ const crates = {
       im3: T('Do the math: loaded minus sent back.', '실은 것에서 돌려보낸 것을 빼요.'),
     }[clueLv];
     const h2 = {
-      basic: T('Type the numbers in the same order.', '같은 순서로 누르세요.'),
-      im1: T('Type the numbers in the same order.', '같은 순서로 누르세요.'),
+      basic: T('Turn the dial to each number in the same order.', '같은 순서로 숫자마다 다이얼을 돌려요.'),
+      im1: T('Turn the dial to each number in the same order.', '같은 순서로 숫자마다 다이얼을 돌려요.'),
       im2: T('Put the numbers from small to big.', '작은 수부터 큰 수로 놓아요.'),
       im3: T('Count the letters: o-n-e has 3 letters.', '글자 수를 세요: o-n-e는 3글자예요.'),
     }[lockLv];
@@ -343,7 +345,7 @@ const REJECT_B = {
 };
 const charger = {
   id: 'charger',
-  clue: { obj: 'window', en: 'Big window', ko: '큰 창문', icon: '🌌' },
+  clue: { obj: 'window', game: 'scan', en: 'Big window', ko: '큰 창문', icon: '🌌' },
   lock: { obj: 'charger', en: "Pip's charger", ko: '핍의 충전기', icon: '🔋' },
   token: (r) => {
     const shape = pick(r, SIGN_SHAPES);
@@ -457,7 +459,7 @@ const ud = (s) => (s === 'up' ? 'up' : 'down');
 const udKo = (s) => (s === 'up' ? '위' : '아래');
 const switches = {
   id: 'switches',
-  clue: { obj: 'poster', en: 'Safety poster', ko: '안전 포스터', icon: '📋' },
+  clue: { obj: 'poster', game: 'uv', en: 'Safety poster', ko: '안전 포스터', icon: '📋' },
   lock: { obj: 'switches', en: 'Light switches', ko: '전등 스위치', icon: '💡' },
   token: (r) => {
     const combo = randInt(r, 0, 5);
@@ -545,7 +547,7 @@ const switches = {
     if (lv === 'im2') return frame('Switch ___ and switch ___ are down.', '스위치 ___와 ___가 아래야.');
     return goal('Tell your teammate which switches are down.');
   },
-  hints({ pattern }, clueLv, lockLv, expected) {
+  hints(t, clueLv, lockLv, expected) {
     const h1 = {
       basic: T('Look at the safety poster on the wall.', '벽의 안전 포스터를 보세요.'),
       im1: T('Look at the safety poster on the wall.', '벽의 안전 포스터를 보세요.'),
@@ -609,7 +611,7 @@ const FRUIT_IM3 = {
 };
 const fruit = {
   id: 'fruit',
-  clue: { obj: 'notebook', en: "Gardener's notebook", ko: '정원사 공책', icon: '📒' },
+  clue: { obj: 'notebook', game: 'rotate', en: "Gardener's notebook", ko: '정원사 공책', icon: '📒' },
   lock: { obj: 'tree', en: 'Fruit tree', ko: '과일나무', icon: '🌳' },
   token: (r) => {
     const all = Object.keys(FRUITS);
@@ -737,7 +739,7 @@ function fishTank(r, n, lv) {
 }
 const fountain = {
   id: 'fountain',
-  clue: { obj: 'fountain', en: 'Glow fish fountain', ko: '빛나는 물고기 분수', icon: '⛲' },
+  clue: { obj: 'fountain', game: 'scratch', en: 'Glow fish fountain', ko: '빛나는 물고기 분수', icon: '⛲' },
   lock: { obj: 'pump', en: 'Water pump', ko: '물 펌프', icon: '🚰' },
   token: (r) => ({ n: randInt(r, 2, 6), seed: randInt(r, 1, 99999) }),
   clueView({ n, seed }, lv, rngOf) {
@@ -761,35 +763,41 @@ const fountain = {
     };
   },
   lockView({ n }, lv) {
-    const base = { widget: 'dial', min: 0, max: 20 };
+    // 버튼을 누르고 있으면 숫자가 0부터 올라가고(끝까지 가면 다시 0), 손을 뗀 숫자가 답이 된다
+    const base = { widget: 'gauge', min: 0, max: 14, label: 'PUMP' };
     if (lv === 'basic')
       return {
         ...base,
         expected: n,
         text: T(
-          'Water Big Bud! Set the number your friend says.',
-          '빅 버드에게 물을 줘요! 친구가 말하는 숫자로 맞추세요.'
+          'Water Big Bud! Hold the pump button and let go at the number your friend says.',
+          '빅 버드에게 물을 줘요! 펌프 버튼을 누르고 있다가 친구가 말하는 숫자에서 손을 떼세요.'
         ),
       };
     if (lv === 'im1')
       return {
         ...base,
         expected: n,
-        text: T('Set the water pump to the number of fish.', '물 펌프를 물고기 수에 맞추세요.'),
+        text: T(
+          'Hold the pump button. Let go when the meter shows the number of fish.',
+          '펌프 버튼을 누르고 있다가 물고기 수가 나오면 손을 떼세요.'
+        ),
       };
     if (lv === 'im2')
       return {
         ...base,
         expected: n + 2,
         text: T(
-          'Big Bud is very thirsty. Set the pump to two more than the number of fish.',
-          '빅 버드가 아주 목말라요. 물고기 수보다 2 많게 맞추세요.'
+          'Big Bud is very thirsty. Let go of the pump at two more than the number of fish.',
+          '빅 버드가 아주 목말라요. 물고기 수보다 2 많은 숫자에서 손을 떼세요.'
         ),
       };
     return {
       ...base,
       expected: 2 * n,
-      text: T('The pump counts in half liters, and Big Bud needs one liter for every fish.'),
+      text: T(
+        'The pump counts in half liters, and Big Bud needs one liter for every fish. Hold the button and let go at the right number.'
+      ),
     };
   },
   ask: {
@@ -815,8 +823,8 @@ const fountain = {
       ),
     }[clueLv];
     const h2 = {
-      basic: T('Use the same number.', '같은 숫자로 맞춰요.'),
-      im1: T('Use the same number.', '같은 숫자로 맞춰요.'),
+      basic: T('Let go at the same number.', '같은 숫자에서 손을 떼요.'),
+      im1: T('Let go at the same number.', '같은 숫자에서 손을 떼요.'),
       im2: T('Add two.', '2를 더해요.'),
       im3: T('Two half liters make one liter, so double it.', '반 리터 두 개가 1리터예요. 두 배로 해요.'),
     }[lockLv];
@@ -834,7 +842,7 @@ const FLOWER_THING = {
 };
 const song = {
   id: 'song',
-  clue: { obj: 'sheet', en: 'Music sheet', ko: '악보', icon: '🎼' },
+  clue: { obj: 'sheet', game: 'rotate', en: 'Music sheet', ko: '악보', icon: '🎼' },
   lock: { obj: 'bells', en: 'Bell flowers', ko: '종소리 꽃', icon: '🌷' },
   token: (r) => {
     let m;
@@ -963,7 +971,7 @@ function scrambled(r, w) {
 }
 const bigbud = {
   id: 'bigbud',
-  clue: { obj: 'tablet', en: 'Grow-light screen', ko: '식물 조명 화면', icon: '🖥️' },
+  clue: { obj: 'tablet', game: 'hold', en: 'Grow-light screen', ko: '식물 조명 화면', icon: '🖥️' },
   lock: { obj: 'bud', en: 'Big Bud', ko: '빅 버드', icon: '🌱' },
   token: (r) => {
     const word = pick(r, Object.keys(MAGIC));
@@ -1064,17 +1072,12 @@ const bigbud = {
 
 /* ---------- 3. 로봇 작업실 ---------- */
 
-const GRID = { cols: 5, rows: 4, start: [2, 3] };
-const STEP = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
+// 로봇 팔: 보이지 않는 레이저 미로. 잠금을 푸는 사람 화면에는 팔(파란 점)과 톱니바퀴(★)만 있고 레이저는 안 보인다.
+// 단서를 가진 사람은 레이저 지도를 보고 길을 말로 안내한다. 레이저에 닿으면 "지지직!" 하고 처음 자리로 돌아간다.
+const MAZE = { cols: 5, rows: 5, start: [0, 4] };
 const OPP = { up: 'down', down: 'up', left: 'right', right: 'left' };
 const MIRROR = { up: 'up', down: 'down', left: 'right', right: 'left' };
-const LANDMARK = {
-  up: 'toward the ceiling',
-  down: 'toward the floor',
-  left: 'toward the door',
-  right: 'toward the window',
-};
-export { GRID as ARM_GRID, STEP as ARM_STEP };
+export const ARM_MAZE = MAZE;
 /** 연속된 같은 방향을 묶는다: [[dir, n], …] */
 const groups = (moves) =>
   moves.reduce((g, m) => {
@@ -1083,146 +1086,143 @@ const groups = (moves) =>
     else g.push([m, 1]);
     return g;
   }, []);
+const sameCell = (a, b) => a[0] === b[0] && a[1] === b[1];
 const arm = {
   id: 'arm',
-  clue: { obj: 'armscreen', en: 'Arm program screen', ko: '로봇 팔 화면', icon: '🖥️' },
+  clue: { obj: 'armscreen', game: 'hold', en: 'Laser map screen', ko: '레이저 지도 화면', icon: '🖥️' },
   lock: { obj: 'arm', en: 'Robot arm', ko: '로봇 팔', icon: '🦾' },
   token: (r) => {
     for (;;) {
-      let [x, y] = GRID.start;
-      const moves = [];
-      while (moves.length < 4) {
-        const ok = Object.keys(STEP).filter((d) => {
-          const [dx, dy] = STEP[d];
-          const nx = x + dx;
-          const ny = y + dy;
-          return nx >= 0 && nx < GRID.cols && ny >= 0 && ny < GRID.rows && d !== OPP[moves.at(-1)];
-        });
-        const d = pick(r, ok);
-        moves.push(d);
-        x += STEP[d][0];
-        y += STEP[d][1];
+      const goal = [randInt(r, 2, 4), randInt(r, 0, 1)];
+      const walls = [];
+      while (walls.length < 7) {
+        const c = [randInt(r, 0, 4), randInt(r, 0, 4)];
+        if (sameCell(c, MAZE.start) || sameCell(c, goal) || walls.some((w) => sameCell(w, c))) continue;
+        walls.push(c);
       }
-      if (new Set(moves).size >= 2) return { moves };
+      const maze = { cols: MAZE.cols, rows: MAZE.rows, start: MAZE.start, goal, walls };
+      const path = mazePath(maze);
+      // 곧장 가는 길(위·오른쪽만)은 모두 레이저에 막혀 있어야 지도 없이 찍어서 갈 수 없다
+      const direct = Math.abs(goal[0] - MAZE.start[0]) + Math.abs(goal[1] - MAZE.start[1]);
+      if (path && path.length > direct && path.length <= 10) return { maze, path };
     }
   },
-  clueView({ moves }, lv) {
-    const en = moves.map((d) => DIRS[d].en);
-    const ko = moves.map((d) => DIRS[d].ko);
+  clueView({ maze, path }, lv) {
     if (lv === 'basic')
-      return { art: { type: 'arrows', moves }, text: T(`${cap(en.join(', '))}!`, `${ko.join(', ')}!`) };
-    if (lv === 'im1')
       return {
-        art: { type: 'screen' },
-        text: T(`Move the arm: ${en.join(', ')}.`, `팔을 움직여요: ${ko.join(', ')}.`),
-      };
-    const g = groups(moves);
-    if (lv === 'im2') {
-      const starts = ['First', 'Then', 'Next', 'Finally'];
-      const startsKo = ['먼저', '그다음', '이어서', '마지막으로'];
-      const lastIdx = g.length - 1;
-      return {
-        art: { type: 'screen' },
+        art: { type: 'maze', maze, path },
         text: T(
-          g
-            .map(
-              ([d, n], i) =>
-                `${i === lastIdx && i > 0 ? 'Finally' : starts[i]}, move the arm ${d} ${numWord(n)} square${n > 1 ? 's' : ''}.`
-            )
-            .join(' '),
-          g
-            .map(([d, n], i) => `${i === lastIdx && i > 0 ? '마지막으로' : startsKo[i]} ${ro(DIRS[d].ko)} ${n}칸.`)
-            .join(' ')
+          'Help your friend move the arm. Say the arrows!',
+          '친구가 팔을 움직이게 도와줘요. 화살표를 하나씩 말해 주세요!'
         ),
       };
-    }
-    const times = ['', '', 'twice ', 'three times '];
-    const lastIdx = g.length - 1;
-    const parts = g.map(([d, n], i) => {
-      const verb =
-        i === lastIdx && i > 0 && n === 1 && d === OPP[moves[0]]
-          ? 'make the opposite of your very first move'
-          : `move ${times[n]}${LANDMARK[d]}`;
-      if (i === 0) return `Start by ${verb.replace(/^move/, 'moving').replace(/^make/, 'making')}.`;
-      return `${i === lastIdx ? 'To finish' : i === 1 ? 'Next' : 'After that'}, ${verb}.`;
-    });
+    if (lv === 'im1')
+      return {
+        art: { type: 'maze', maze },
+        text: T(
+          'Red lights are lasers. Find a safe way from the blue dot to the star, and tell your teammate.',
+          '빨간 불은 레이저예요. 파란 점에서 별까지 안전한 길을 찾아 팀원에게 알려 주세요.'
+        ),
+      };
+    if (lv === 'im2')
+      return {
+        art: { type: 'maze', maze },
+        text: T(
+          'Guide your teammate one step at a time. If the arm touches a laser, it goes back to the start!',
+          '팀원을 한 칸씩 안내해요. 팔이 레이저에 닿으면 처음 자리로 돌아가요!'
+        ),
+      };
     return {
-      art: { type: 'screen' },
-      text: T(`Arm map: the door is on the left and the big window is on the right. ${parts.join(' ')}`),
+      art: { type: 'maze', maze, rotated: true },
+      text: T(
+        'Careful: this map was printed sideways. The real "up" is on the right side of the map. Guide your teammate around the lasers.'
+      ),
     };
   },
-  lockView({ moves }, lv) {
-    const base = { widget: 'arrows', len: 4, grid: GRID };
+  lockView({ maze }, lv) {
+    const base = { widget: 'maze', maze, expected: 'goal' };
     if (lv === 'basic')
       return {
         ...base,
         map: null,
-        expected: moves,
         text: T(
-          'Move the robot arm! Press the arrows your friend says.',
-          '로봇 팔을 움직여요! 친구가 말하는 화살표를 누르세요.'
+          'Move the robot arm to the star! The lasers are invisible, but your friend can see them.',
+          '로봇 팔을 별까지 옮겨요! 레이저는 안 보이지만 친구는 볼 수 있어요.'
         ),
       };
     if (lv === 'im1')
       return {
         ...base,
         map: null,
-        expected: moves,
         text: T(
-          'Move the arm to the gear. Ask your teammate which way to go.',
-          '팔을 톱니바퀴까지 움직여요. 팀원에게 어느 쪽인지 물어보세요.'
+          'Move the arm to the gear (★). The lasers are invisible! Ask your teammate which way is safe.',
+          '팔을 톱니바퀴(★)까지 옮겨요. 레이저가 안 보여요! 팀원에게 어느 쪽이 안전한지 물어보세요.'
         ),
       };
     if (lv === 'im2')
       return {
         ...base,
         map: MIRROR,
-        expected: moves.map((d) => MIRROR[d]),
         text: T(
-          'The controller is in MIRROR MODE: left and right are switched. Up and down are the same.',
-          '조종기가 거울 모드예요. 왼쪽과 오른쪽이 바뀌었어요. 위아래는 그대로예요.'
+          'The controller is in MIRROR MODE: left and right are switched. Up and down are the same. The lasers are invisible!',
+          '조종기가 거울 모드예요. 왼쪽과 오른쪽이 바뀌었고 위아래는 그대로예요. 레이저는 안 보여요!'
         ),
       };
     return {
       ...base,
       map: OPP,
-      expected: moves.map((d) => OPP[d]),
       text: T(
-        'The camera is upside down, so every control is flipped: up is down, down is up, left is right, and right is left.'
+        'The camera is upside down, so every control is flipped: up is down, down is up, left is right, and right is left. The lasers are invisible!'
       ),
     };
   },
   ask: {
     basic: T('Which way?', '어느 쪽이야?'),
-    im1: T('Which way do I move the arm?', '팔을 어느 쪽으로 움직여?'),
-    im2: T('What are the moves?', '어떻게 움직여?'),
-    im3: goal('Find out how the arm should move.'),
+    im1: T('Which way is safe?', '어느 쪽이 안전해?'),
+    im2: T('Where are the lasers? Which way should I go?', '레이저가 어디 있어? 어느 쪽으로 가?'),
+    im3: goal('Get directions around the invisible lasers.'),
   },
-  tell({ moves }, lv) {
-    const en = moves.map((d) => DIRS[d].en);
-    if (lv === 'basic') return T(`${cap(en.join(', '))}!`, `${moves.map((d) => DIRS[d].ko).join(', ')}!`);
-    if (lv === 'im1') return T(`Move ${en.join(', ')}.`, `${ro(moves.map((d) => DIRS[d].ko).join(', '))} 움직여.`);
-    if (lv === 'im2') return frame('First ___, then ___, ___, and last ___.', '처음 ___, 그다음 ___, ___, 마지막 ___.');
-    return goal('Tell your teammate how the arm should move.');
+  tell({ path }, lv) {
+    const en = path.map((d) => DIRS[d].en);
+    if (lv === 'basic') return T(`${cap(en.join(', '))}!`, `${path.map((d) => DIRS[d].ko).join(', ')}!`);
+    if (lv === 'im1') {
+      const g = groups(path);
+      return T(
+        g.map(([d, n]) => `Go ${d} ${numWord(n)}.`).join(' '),
+        g.map(([d, n]) => `${ro(DIRS[d].ko)} ${n}칸.`).join(' ')
+      );
+    }
+    if (lv === 'im2') return frame('Go ___ ___ steps. Stop! Now go ___.', '___으로 ___칸 가. 멈춰! 이제 ___으로 가.');
+    return goal('Guide your teammate around the lasers.');
   },
-  hints(t, clueLv, lockLv, expected) {
-    const h1 =
-      clueLv === 'im3'
-        ? T('The door is on the left. The window is on the right.', '문은 왼쪽, 창문은 오른쪽이에요.')
-        : T('Look at the screen next to the robot arm.', '로봇 팔 옆 화면을 보세요.');
+  hints({ path }, clueLv, lockLv) {
+    const h1 = {
+      basic: T(
+        'Look at the laser map next to the arm. Read the arrows.',
+        '로봇 팔 옆 레이저 지도를 보고 화살표를 읽어요.'
+      ),
+      im1: T('Find a way that never touches a red light.', '빨간 불을 한 번도 안 지나는 길을 찾아요.'),
+      im2: T('Tell your teammate one step at a time.', '팀원에게 한 칸씩 말해 줘요.'),
+      im3: T('Turn the map in your head: the right side is up.', '지도를 머릿속으로 돌려요: 오른쪽이 위예요.'),
+    }[clueLv];
+    const map = { im2: MIRROR, im3: OPP }[lockLv];
     const h2 = {
-      basic: T('Press the same arrows in order.', '같은 화살표를 차례로 눌러요.'),
-      im1: T('Press the same arrows in order.', '같은 화살표를 차례로 눌러요.'),
+      basic: T('Press one arrow, then listen to your friend.', '화살표를 하나 누르고 친구 말을 들어요.'),
+      im1: T('Press one arrow, then listen to your friend.', '화살표를 하나 누르고 친구 말을 들어요.'),
       im2: T('Left and right are switched.', '왼쪽과 오른쪽을 바꿔 눌러요.'),
       im3: T('Press the opposite arrow every time.', '매번 반대 화살표를 눌러요.'),
     }[lockLv];
+    const first = map ? map[path[0]] : path[0];
     return [
       h1,
       h2,
-      T(`The first press is ${expected[0]}.`, `첫 번째로 누를 것은 ${josa(DIRS[expected[0]].ko, '이에요', '예요')}.`),
+      T(`The first press is ${first}.`, `첫 번째로 누를 것은 ${josa(DIRS[first].ko, '이에요', '예요')}.`),
     ];
   },
-  done: T('The arm grabs a shiny gear!', '로봇 팔이 반짝이는 톱니바퀴를 집었어요!'),
+  done: T(
+    'The arm dodges every laser and grabs a shiny gear!',
+    '로봇 팔이 레이저를 모두 피해 반짝이는 톱니바퀴를 집었어요!'
+  ),
 };
 
 const WIRE_COLORS = ['red', 'blue', 'yellow'];
@@ -1264,7 +1264,7 @@ const asMap = (perm) => Object.fromEntries(WIRE_COLORS.map((col, i) => [col, per
 export const uniqueWiring = (tests) => PERMS.map(asMap).filter((m) => tests.every((t) => t(m))).length === 1;
 const wires = {
   id: 'wires',
-  clue: { obj: 'blueprint', en: 'Wiring blueprint', ko: '배선 설계도', icon: '🗺️' },
+  clue: { obj: 'blueprint', game: 'scratch', en: 'Wiring blueprint', ko: '배선 설계도', icon: '🗺️' },
   lock: { obj: 'powerbox', en: 'Power box', ko: '전원 상자', icon: '⚡' },
   token: (r) => {
     const map = asMap(pick(r, PERMS));
@@ -1384,7 +1384,7 @@ const SIZE = { big: { en: 'big', ko: '큰', code: 'L' }, small: { en: 'small', k
 export const GEAR_IDS = ['big', 'small'].flatMap((s) => GEAR_COLORS.map((col) => `${s}-${col}`));
 const gears = {
   id: 'gears',
-  clue: { obj: 'note', en: "Bolt's note", ko: '볼트의 쪽지', icon: '📝' },
+  clue: { obj: 'note', game: 'rotate', en: "Bolt's note", ko: '볼트의 쪽지', icon: '📝' },
   lock: { obj: 'gears', en: 'Gear rack', ko: '톱니바퀴 선반', icon: '⚙️' },
   token: (r) => {
     const size = pick(r, ['big', 'small']);
@@ -1508,7 +1508,7 @@ export function sparkyBarks(n, lv) {
 }
 const sparky = {
   id: 'sparky',
-  clue: { obj: 'sparky', en: 'Sparky the robot dog', ko: '로봇 강아지 스파키', icon: '🐕' },
+  clue: { obj: 'sparky', game: 'hold', en: 'Sparky the robot dog', ko: '로봇 강아지 스파키', icon: '🐕' },
   lock: { obj: 'liftpanel', en: 'Elevator buttons', ko: '엘리베이터 버튼', icon: '🛗' },
   token: (r) => ({ n: randInt(r, 3, 9) }),
   clueView({ n }, lv) {
@@ -1538,29 +1538,39 @@ const sparky = {
     };
   },
   lockView({ n }, lv) {
-    const base = { widget: 'dial', min: 0, max: 12 };
+    const base = { widget: 'gauge', min: 0, max: 12, label: 'FLOOR' };
     if (lv === 'basic')
-      return { ...base, expected: n, text: T('Type the number your friend says.', '친구가 말하는 숫자로 맞추세요.') };
+      return {
+        ...base,
+        expected: n,
+        text: T(
+          'Hold the lever. Let go at the number your friend says.',
+          '레버를 누르고 있다가 친구가 말하는 숫자에서 손을 떼세요.'
+        ),
+      };
     if (lv === 'im1')
       return {
         ...base,
         expected: n,
-        text: T('Choose the floor number for the Control Room.', '관제실 층 번호를 고르세요.'),
+        text: T(
+          'Hold the lever and let go at the floor number for the Control Room.',
+          '레버를 누르고 있다가 관제실 층 번호에서 손을 떼세요.'
+        ),
       };
     if (lv === 'im2')
       return {
         ...base,
         expected: n + 1,
         text: T(
-          'The Control Room is one floor above the floor Sparky barks. Choose that floor.',
-          '관제실은 스파키가 짖은 층보다 한 층 위예요. 그 층을 고르세요.'
+          'The Control Room is one floor above the floor Sparky barks. Hold the lever and let go at that floor.',
+          '관제실은 스파키가 짖은 층보다 한 층 위예요. 레버를 누르고 있다가 그 층에서 손을 떼세요.'
         ),
       };
     return {
       ...base,
       expected: n - 1,
       text: T(
-        'This elevator starts counting at zero — the ground floor is floor 0 — but Sparky starts counting at one. Choose the number the elevator uses.'
+        'This elevator starts counting at zero — the ground floor is floor 0 — but Sparky starts counting at one. Hold the lever and let go at the number the elevator uses.'
       ),
     };
   },
@@ -1584,8 +1594,8 @@ const sparky = {
       im3: T('AWOOO is five. WOOF is one.', 'AWOOO는 5, WOOF는 1이에요.'),
     }[clueLv];
     const h2 = {
-      basic: T('Use the same number.', '같은 숫자로 해요.'),
-      im1: T('Use the same number.', '같은 숫자로 해요.'),
+      basic: T('Let go at the same number.', '같은 숫자에서 손을 떼요.'),
+      im1: T('Let go at the same number.', '같은 숫자에서 손을 떼요.'),
       im2: T('Add one.', '1을 더해요.'),
       im3: T('Take away one.', '1을 빼요.'),
     }[lockLv];
@@ -1610,7 +1620,7 @@ const PLANET_NOT = {
 };
 const scanner = {
   id: 'scanner',
-  clue: { obj: 'starmap', en: 'Star map', ko: '별 지도', icon: '🪐' },
+  clue: { obj: 'starmap', game: 'scan', en: 'Star map', ko: '별 지도', icon: '🪐' },
   lock: { obj: 'scanner', en: 'Security scanner', ko: '보안 스캐너', icon: '📡' },
   token: (r) => {
     const planet = pick(r, Object.keys(PLANETS));
@@ -1728,7 +1738,7 @@ const caesar = (w) =>
   [...w.toUpperCase()].map((ch) => String.fromCharCode(((ch.charCodeAt(0) - 65 + 1) % 26) + 65)).join('');
 const password = {
   id: 'password',
-  clue: { obj: 'comms', en: "Earth's message", ko: '지구의 메시지', icon: '🌍' },
+  clue: { obj: 'comms', game: 'tune', en: "Earth's message", ko: '지구의 메시지', icon: '🌍' },
   lock: { obj: 'mic', en: 'Radio to Earth', ko: '지구 무전', icon: '🎙️' },
   token: (r) => {
     const word = pick(r, Object.keys(SPACE_WORDS));
@@ -1855,7 +1865,7 @@ const POWER_PHRASE = {
 };
 const power = {
   id: 'power',
-  clue: { obj: 'chart', en: 'Power chart', ko: '전력 표', icon: '📊' },
+  clue: { obj: 'chart', game: 'scratch', en: 'Power chart', ko: '전력 표', icon: '📊' },
   lock: { obj: 'switchboard', en: 'Camera switchboard', ko: '카메라 전력판', icon: '🎚️' },
   token: (r) => ({ levels: shuffle(r, [2, 3, 4, 5]).slice(0, 3), order: shuffle(r, [0, 1, 2]) }),
   clueView({ levels, order }, lv) {
@@ -1983,7 +1993,7 @@ const addMin = ({ h, m }, d) => {
 const hm = ({ h, m }) => `${h}:${String(m).padStart(2, '0')}`;
 const doorclock = {
   id: 'doorclock',
-  clue: { obj: 'captainlog', en: "Captain's video log", ko: '선장의 영상 기록', icon: '📹' },
+  clue: { obj: 'captainlog', game: 'tune', en: "Captain's video log", ko: '선장의 영상 기록', icon: '📹' },
   lock: { obj: 'doorclock', en: 'Door clock', ko: '문 시계', icon: '🕘' },
   token: (r) => ({
     h: randInt(r, 8, 10),
@@ -2068,7 +2078,7 @@ const doorclock = {
     if (lv === 'im2') return frame('The door unlocks at ___.', '문은 ___에 열려.');
     return goal('Tell your teammate when the door unlocks.');
   },
-  hints({ h }, clueLv, lockLv, expected) {
+  hints(t, clueLv, lockLv, expected) {
     const h1 = {
       basic: T("Watch the captain's video on the chair.", '의자 위 선장의 영상을 보세요.'),
       im1: T("Watch the captain's video on the chair.", '의자 위 선장의 영상을 보세요.'),
